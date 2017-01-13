@@ -50,7 +50,7 @@ L_CFLAGS += -mabi=aapcs-linux
 endif
 
 # C++ flags for hidl interface
-L_CPPFLAGS := -std=c++11 -Wall -Werror
+L_CPPFLAGS := -Wall -Werror
 # TODO: Remove these allowed warnings later.
 L_CPPFLAGS += -Wno-unused-variable -Wno-unused-parameter
 L_CPPFLAGS += -Wno-unused-private-field
@@ -1596,9 +1596,7 @@ endif
 
 # With BoringSSL we need libkeystore-engine in order to provide access to
 # keystore keys.
-ifneq (,$(wildcard external/boringssl/flavor.mk))
 LOCAL_SHARED_LIBRARIES += libkeystore-engine
-endif
 
 ifdef CONFIG_DRIVER_NL80211
 ifneq ($(wildcard external/libnl),)

@@ -11,6 +11,28 @@
 #include "hidl_return_util.h"
 #include "p2p_iface.h"
 
+namespace {
+const char kConfigMethodStrPbc[] = "pbc";
+const char kConfigMethodStrDisplay[] = "display";
+const char kConfigMethodStrKeypad[] = "keypad";
+constexpr char kSetMiracastMode[] = "MIRACAST ";
+
+using android::hardware::wifi::supplicant::V1_0::ISupplicantP2pIface;
+uint8_t convertHidlMiracastModeToInternal(
+    ISupplicantP2pIface::MiracastMode mode)
+{
+	switch (mode) {
+	case ISupplicantP2pIface::MiracastMode::DISABLED:
+		return 0;
+	case ISupplicantP2pIface::MiracastMode::SOURCE:
+		return 1;
+	case ISupplicantP2pIface::MiracastMode::SINK:
+		return 2;
+	};
+	WPA_ASSERT(false);
+}
+}  // namespace
+
 namespace android {
 namespace hardware {
 namespace wifi {
@@ -90,7 +112,7 @@ Return<void> P2pIface::getDeviceAddress(getDeviceAddress_cb _hidl_cb)
 }
 
 Return<void> P2pIface::setSsidPostfix(
-    const hidl_string& postfix, setSsidPostfix_cb _hidl_cb)
+    const hidl_vec<uint8_t>& postfix, setSsidPostfix_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
@@ -98,18 +120,21 @@ Return<void> P2pIface::setSsidPostfix(
 }
 
 Return<void> P2pIface::setGroupIdle(
-    uint32_t timeout_in_sec, setGroupIdle_cb _hidl_cb)
+    const hidl_string& group_ifname, uint32_t timeout_in_sec,
+    setGroupIdle_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
-	    &P2pIface::setGroupIdleInternal, _hidl_cb, timeout_in_sec);
+	    &P2pIface::setGroupIdleInternal, _hidl_cb, group_ifname,
+	    timeout_in_sec);
 }
 
-Return<void> P2pIface::setPowerSave(bool enable, setPowerSave_cb _hidl_cb)
+Return<void> P2pIface::setPowerSave(
+    const hidl_string& group_ifname, bool enable, setPowerSave_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
-	    &P2pIface::setPowerSaveInternal, _hidl_cb, enable);
+	    &P2pIface::setPowerSaveInternal, _hidl_cb, group_ifname, enable);
 }
 
 Return<void> P2pIface::find(uint32_t timeout_in_sec, find_cb _hidl_cb)
@@ -136,7 +161,7 @@ Return<void> P2pIface::flush(flush_cb _hidl_cb)
 Return<void> P2pIface::connect(
     const hidl_array<uint8_t, 6>& peer_address,
     ISupplicantP2pIface::WpsProvisionMethod provision_method,
-    const hidl_vec<uint8_t>& pre_selected_pin, bool join_existing_group,
+    const hidl_string& pre_selected_pin, bool join_existing_group,
     bool persistent, uint32_t go_intent, connect_cb _hidl_cb)
 {
 	return validateAndCall(
@@ -165,7 +190,8 @@ Return<void> P2pIface::provisionDiscovery(
 }
 
 Return<void> P2pIface::addGroup(
-    bool persistent, uint32_t persistent_network_id, addGroup_cb _hidl_cb)
+    bool persistent, SupplicantNetworkId persistent_network_id,
+    addGroup_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
@@ -196,13 +222,13 @@ Return<void> P2pIface::invite(
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
-	    &P2pIface::inviteInternal, _hidl_cb, go_device_address,
-	    peer_address);
+	    &P2pIface::inviteInternal, _hidl_cb, group_ifname,
+	    go_device_address, peer_address);
 }
 
 Return<void> P2pIface::reinvoke(
-    uint32_t persistent_network_id, const hidl_array<uint8_t, 6>& peer_address,
-    reinvoke_cb _hidl_cb)
+    SupplicantNetworkId persistent_network_id,
+    const hidl_array<uint8_t, 6>& peer_address, reinvoke_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
@@ -211,13 +237,13 @@ Return<void> P2pIface::reinvoke(
 }
 
 Return<void> P2pIface::configureExtListen(
-    bool enable, uint32_t period_in_millis, uint32_t interval_in_millis,
+    uint32_t period_in_millis, uint32_t interval_in_millis,
     configureExtListen_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
-	    &P2pIface::configureExtListenInternal, _hidl_cb, enable,
-	    period_in_millis, interval_in_millis);
+	    &P2pIface::configureExtListenInternal, _hidl_cb, period_in_millis,
+	    interval_in_millis);
 }
 
 Return<void> P2pIface::setListenChannel(
@@ -227,6 +253,14 @@ Return<void> P2pIface::setListenChannel(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
 	    &P2pIface::setListenChannelInternal, _hidl_cb, channel,
 	    operating_class);
+}
+
+Return<void> P2pIface::setDisallowedFrequencies(
+    const hidl_vec<FreqRange>& ranges, setDisallowedFrequencies_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
+	    &P2pIface::setDisallowedFrequenciesInternal, _hidl_cb, ranges);
 }
 
 Return<void> P2pIface::getSsid(
@@ -281,13 +315,11 @@ Return<void> P2pIface::removeUpnpService(
 	    service_name);
 }
 
-Return<void> P2pIface::flushServices(
-    uint32_t version, const hidl_string& service_name,
-    flushServices_cb _hidl_cb)
+Return<void> P2pIface::flushServices(flushServices_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
-	    &P2pIface::flushServicesInternal, _hidl_cb, version, service_name);
+	    &P2pIface::flushServicesInternal, _hidl_cb);
 }
 
 Return<void> P2pIface::requestServiceDiscovery(
@@ -296,8 +328,8 @@ Return<void> P2pIface::requestServiceDiscovery(
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
-	    &P2pIface::requestServiceDiscoveryInternal, _hidl_cb, version,
-	    peer_address, query);
+	    &P2pIface::requestServiceDiscoveryInternal, _hidl_cb, peer_address,
+	    query);
 }
 
 Return<void> P2pIface::cancelServiceDiscovery(
@@ -306,6 +338,14 @@ Return<void> P2pIface::cancelServiceDiscovery(
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
 	    &P2pIface::cancelServiceDiscoveryInternal, _hidl_cb, identifier);
+}
+
+Return<void> P2pIface::setMiracastMode(
+    ISupplicantP2pIface::MiracastMode mode, setMiracastMode_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
+	    &P2pIface::setMiracastModeInternal, _hidl_cb, mode);
 }
 
 std::pair<SupplicantStatus, std::string> P2pIface::getNameInternal()
@@ -394,179 +434,445 @@ SupplicantStatus P2pIface::registerCallbackInternal(
 std::pair<SupplicantStatus, std::array<uint8_t, 6>>
 P2pIface::getDeviceAddressInternal()
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	std::array<uint8_t, 6> addr;
+	static_assert(ETH_ALEN == addr.size(), "Size mismatch");
+	os_memcpy(addr.data(), wpa_s->global->p2p_dev_addr, ETH_ALEN);
 	return {{SupplicantStatusCode::SUCCESS, ""}, {}};
 }
 
-SupplicantStatus P2pIface::setSsidPostfixInternal(const hidl_string& postfix)
+SupplicantStatus P2pIface::setSsidPostfixInternal(
+    const std::vector<uint8_t>& postfix)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (p2p_set_ssid_postfix(
+		wpa_s->global->p2p, postfix.data(), postfix.size())) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
-SupplicantStatus P2pIface::setGroupIdleInternal(uint32_t timeout_in_sec)
+SupplicantStatus P2pIface::setGroupIdleInternal(
+    const std::string& group_ifname, uint32_t timeout_in_sec)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_group_s =
+	    retrieveGroupIfacePtr(group_ifname);
+	if (!wpa_group_s) {
+		return {SupplicantStatusCode::FAILURE_IFACE_UNKNOWN, ""};
+	}
+	wpa_group_s->conf->p2p_group_idle = timeout_in_sec;
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
-SupplicantStatus P2pIface::setPowerSaveInternal(bool enable)
+SupplicantStatus P2pIface::setPowerSaveInternal(
+    const std::string& group_ifname, bool enable)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_group_s =
+	    retrieveGroupIfacePtr(group_ifname);
+	if (!wpa_group_s) {
+		return {SupplicantStatusCode::FAILURE_IFACE_UNKNOWN, ""};
+	}
+	if (wpa_drv_set_p2p_powersave(wpa_group_s, enable, -1, -1)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::findInternal(uint32_t timeout_in_sec)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpa_s->wpa_state == WPA_INTERFACE_DISABLED) {
+		return {SupplicantStatusCode::FAILURE_IFACE_DISABLED, ""};
+	}
+	uint32_t search_delay = wpas_p2p_search_delay(wpa_s);
+	if (wpas_p2p_find(
+		wpa_s, timeout_in_sec, P2P_FIND_START_WITH_FULL, 0, nullptr,
+		nullptr, search_delay, 0, nullptr, 0)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::stopFindInternal()
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpa_s->wpa_state == WPA_INTERFACE_DISABLED) {
+		return {SupplicantStatusCode::FAILURE_IFACE_DISABLED, ""};
+	}
+	wpas_p2p_stop_find(wpa_s);
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::flushInternal()
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	os_memset(wpa_s->p2p_auth_invite, 0, ETH_ALEN);
+	wpa_s->force_long_sd = 0;
+	wpas_p2p_stop_find(wpa_s);
+	wpa_s->parent->p2ps_method_config_any = 0;
+	if (wpa_s->global->p2p)
+		p2p_flush(wpa_s->global->p2p);
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
-std::pair<SupplicantStatus, std::vector<uint8_t>> P2pIface::connectInternal(
-    const hidl_array<uint8_t, 6>& peer_address,
+// This method only implements support for subset (needed by Android framework)
+// of parameters that can be specified for connect.
+std::pair<SupplicantStatus, std::string> P2pIface::connectInternal(
+    const std::array<uint8_t, 6>& peer_address,
     ISupplicantP2pIface::WpsProvisionMethod provision_method,
-    const hidl_vec<uint8_t>& pre_selected_pin, bool join_existing_group,
+    const std::string& pre_selected_pin, bool join_existing_group,
     bool persistent, uint32_t go_intent)
 {
-	// TODO: Add implementation.
-	return {{SupplicantStatusCode::SUCCESS, ""}, {}};
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (go_intent > 15) {
+		return {{SupplicantStatusCode::FAILURE_ARGS_INVALID, ""}, {}};
+	}
+	p2p_wps_method wps_method = {};
+	switch (provision_method) {
+	case WpsProvisionMethod::PBC:
+		wps_method = WPS_PBC;
+		break;
+	case WpsProvisionMethod::DISPLAY:
+		wps_method = WPS_PIN_DISPLAY;
+		break;
+	case WpsProvisionMethod::KEYPAD:
+		wps_method = WPS_PIN_KEYPAD;
+		break;
+	}
+	int new_pin = wpas_p2p_connect(
+	    wpa_s, peer_address.data(), pre_selected_pin.data(), wps_method,
+	    persistent, false, join_existing_group, false, go_intent, 0, 0, -1,
+	    false, false, false, VHT_CHANWIDTH_USE_HT, nullptr, 0);
+	if (new_pin < 0) {
+		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, {}};
+	}
+	std::string pin_ret;
+	if (provision_method == WpsProvisionMethod::DISPLAY &&
+	    pre_selected_pin.empty()) {
+		pin_ret.reserve(9);
+		snprintf(&pin_ret[0], pin_ret.size(), "%08d", new_pin);
+	}
+	return {{SupplicantStatusCode::SUCCESS, ""}, pin_ret};
 }
 
 SupplicantStatus P2pIface::cancelConnectInternal()
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpas_p2p_cancel(wpa_s)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::provisionDiscoveryInternal(
-    const hidl_array<uint8_t, 6>& peer_address,
+    const std::array<uint8_t, 6>& peer_address,
     ISupplicantP2pIface::WpsProvisionMethod provision_method)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	p2ps_provision* prov_param;
+	const char* config_method_str = nullptr;
+	switch (provision_method) {
+	case WpsProvisionMethod::PBC:
+		config_method_str = kConfigMethodStrPbc;
+		break;
+	case WpsProvisionMethod::DISPLAY:
+		config_method_str = kConfigMethodStrDisplay;
+		break;
+	case WpsProvisionMethod::KEYPAD:
+		config_method_str = kConfigMethodStrKeypad;
+		break;
+	}
+	if (wpas_p2p_prov_disc(
+		wpa_s, peer_address.data(), config_method_str,
+		WPAS_P2P_PD_FOR_GO_NEG, nullptr)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::addGroupInternal(
-    bool persistent, uint32_t persistent_network_id)
+    bool persistent, SupplicantNetworkId persistent_network_id)
 {
-	// TODO: Add implementation.
-	return {SupplicantStatusCode::SUCCESS, ""};
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	int vht = wpa_s->conf->p2p_go_vht;
+	int ht40 = wpa_s->conf->p2p_go_ht40 || vht;
+	struct wpa_ssid* ssid =
+	    wpa_config_get_network(wpa_s->conf, persistent_network_id);
+	if (ssid == NULL) {
+		if (wpas_p2p_group_add(
+			wpa_s, persistent, 0, 0, ht40, vht,
+			VHT_CHANWIDTH_USE_HT)) {
+			return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+		} else {
+			return {SupplicantStatusCode::SUCCESS, ""};
+		}
+	} else if (ssid->disabled == 2) {
+		if (wpas_p2p_group_add_persistent(
+			wpa_s, ssid, 0, 0, 0, 0, ht40, vht,
+			VHT_CHANWIDTH_USE_HT, NULL, 0, 0)) {
+			return {SupplicantStatusCode::FAILURE_NETWORK_UNKNOWN,
+				""};
+		} else {
+			return {SupplicantStatusCode::SUCCESS, ""};
+		}
+	}
+	return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
 }
 
-SupplicantStatus P2pIface::removeGroupInternal(const hidl_string& group_ifname)
+SupplicantStatus P2pIface::removeGroupInternal(const std::string& group_ifname)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_group_s =
+	    retrieveGroupIfacePtr(group_ifname);
+	if (!wpa_group_s) {
+		return {SupplicantStatusCode::FAILURE_IFACE_UNKNOWN, ""};
+	}
+	if (wpas_p2p_group_remove(wpa_group_s, group_ifname.c_str())) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::rejectInternal(
-    const hidl_array<uint8_t, 6>& peer_address)
+    const std::array<uint8_t, 6>& peer_address)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpa_s->global->p2p_disabled || wpa_s->global->p2p == NULL) {
+		return {SupplicantStatusCode::FAILURE_IFACE_DISABLED, ""};
+	}
+	if (wpas_p2p_reject(wpa_s, peer_address.data())) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::inviteInternal(
-    const hidl_string& group_ifname,
-    const hidl_array<uint8_t, 6>& go_device_address,
-    const hidl_array<uint8_t, 6>& peer_address)
+    const std::string& group_ifname,
+    const std::array<uint8_t, 6>& go_device_address,
+    const std::array<uint8_t, 6>& peer_address)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpas_p2p_invite_group(
+		wpa_s, group_ifname.c_str(), peer_address.data(),
+		go_device_address.data())) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::reinvokeInternal(
-    uint32_t persistent_network_id, const hidl_array<uint8_t, 6>& peer_address)
+    SupplicantNetworkId persistent_network_id,
+    const std::array<uint8_t, 6>& peer_address)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	int vht = wpa_s->conf->p2p_go_vht;
+	int ht40 = wpa_s->conf->p2p_go_ht40 || vht;
+	struct wpa_ssid* ssid =
+	    wpa_config_get_network(wpa_s->conf, persistent_network_id);
+	if (ssid == NULL || ssid->disabled != 2) {
+		return {SupplicantStatusCode::FAILURE_NETWORK_UNKNOWN, ""};
+	}
+	if (wpas_p2p_invite(
+		wpa_s, peer_address.data(), ssid, NULL, 0, 0, ht40, vht,
+		VHT_CHANWIDTH_USE_HT, 0)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::configureExtListenInternal(
-    bool enable, uint32_t period_in_millis, uint32_t interval_in_millis)
+    uint32_t period_in_millis, uint32_t interval_in_millis)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpas_p2p_ext_listen(wpa_s, period_in_millis, interval_in_millis)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::setListenChannelInternal(
     uint32_t channel, uint32_t operating_class)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (p2p_set_listen_channel(
+		wpa_s->global->p2p, operating_class, channel, 1)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus P2pIface::setDisallowedFrequenciesInternal(
+    const std::vector<FreqRange>& ranges)
+{
+	if (ranges.size() == 0) {
+		return {SupplicantStatusCode::FAILURE_ARGS_INVALID, ""};
+	}
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	using DestT = struct wpa_freq_range_list::wpa_freq_range;
+	DestT* freq_ranges =
+	    static_cast<DestT*>(os_malloc(sizeof(DestT) * ranges.size()));
+	if (!freq_ranges) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	uint32_t i = 0;
+	for (const auto& range : ranges) {
+		freq_ranges[i].min = range.min;
+		freq_ranges[i].max = range.max;
+		i++;
+	}
+
+	os_free(wpa_s->global->p2p_disallow_freq.range);
+	wpa_s->global->p2p_disallow_freq.range = freq_ranges;
+	wpa_s->global->p2p_disallow_freq.num = ranges.size();
+	wpas_p2p_update_channel_list(wpa_s, WPAS_P2P_CHANNEL_UPDATE_DISALLOW);
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 std::pair<SupplicantStatus, std::vector<uint8_t>> P2pIface::getSsidInternal(
-    const hidl_array<uint8_t, 6>& peer_address)
+    const std::array<uint8_t, 6>& peer_address)
 {
-	// TODO: Add implementation.
-	return {{SupplicantStatusCode::SUCCESS, ""}, {}};
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	const struct p2p_peer_info* info =
+	    p2p_get_peer_info(wpa_s->global->p2p, peer_address.data(), 0);
+	if (!info) {
+		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, {}};
+	}
+	const struct p2p_device* dev =
+	    reinterpret_cast<const struct p2p_device*>(
+		(reinterpret_cast<const uint8_t*>(info)) -
+		offsetof(struct p2p_device, info));
+	std::vector<uint8_t> ssid;
+	if (dev && dev->oper_ssid_len) {
+		ssid.assign(
+		    dev->oper_ssid, dev->oper_ssid + dev->oper_ssid_len);
+	}
+	return {{SupplicantStatusCode::SUCCESS, ""}, ssid};
 }
 
 std::pair<SupplicantStatus, uint32_t> P2pIface::getGroupCapabilityInternal(
-    const hidl_array<uint8_t, 6>& peer_address)
+    const std::array<uint8_t, 6>& peer_address)
 {
-	// TODO: Add implementation.
-	return {{SupplicantStatusCode::SUCCESS, ""}, 0};
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	const struct p2p_peer_info* info =
+	    p2p_get_peer_info(wpa_s->global->p2p, peer_address.data(), 0);
+	if (!info) {
+		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, {}};
+	}
+	return {{SupplicantStatusCode::SUCCESS, ""}, info->group_capab};
 }
 
 SupplicantStatus P2pIface::addBonjourServiceInternal(
-    const hidl_vec<uint8_t>& query, const hidl_vec<uint8_t>& response)
+    const std::vector<uint8_t>& query, const std::vector<uint8_t>& response)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	struct wpabuf* query_buf = wpabuf_alloc(query.size());
+	if (!query_buf) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	wpabuf_put_data(query_buf, query.data(), query.size());
+
+	struct wpabuf* response_buf = wpabuf_alloc(response.size());
+	if (!query_buf) {
+		wpabuf_free(query_buf);
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	wpabuf_put_data(response_buf, response.data(), response.size());
+
+	if (wpas_p2p_service_add_bonjour(wpa_s, query_buf, response_buf)) {
+		wpabuf_free(query_buf);
+		wpabuf_free(response_buf);
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::removeBonjourServiceInternal(
-    const hidl_vec<uint8_t>& query)
+    const std::vector<uint8_t>& query)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	struct wpabuf* query_buf = wpabuf_alloc(query.size());
+	if (!query_buf) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	wpabuf_put_data(query_buf, query.data(), query.size());
+
+	int ret = wpas_p2p_service_del_bonjour(wpa_s, query_buf);
+	wpabuf_free(query_buf);
+	if (ret) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::addUpnpServiceInternal(
-    uint32_t version, const hidl_string& service_name)
+    uint32_t version, const std::string& service_name)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpas_p2p_service_add_upnp(wpa_s, version, service_name.c_str())) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 SupplicantStatus P2pIface::removeUpnpServiceInternal(
-    uint32_t version, const hidl_string& service_name)
+    uint32_t version, const std::string& service_name)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpas_p2p_service_del_upnp(wpa_s, version, service_name.c_str())) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
-SupplicantStatus P2pIface::flushServicesInternal(
-    uint32_t version, const hidl_string& service_name)
+SupplicantStatus P2pIface::flushServicesInternal()
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	wpas_p2p_service_flush(wpa_s);
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
 std::pair<SupplicantStatus, uint64_t> P2pIface::requestServiceDiscoveryInternal(
-    const hidl_array<uint8_t, 6>& peer_address, const hidl_vec<uint8_t>& query)
+    const std::array<uint8_t, 6>& peer_address,
+    const std::vector<uint8_t>& query)
 {
-	// TODO: Add implementation.
-	return {{SupplicantStatusCode::SUCCESS, ""}, 0};
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	struct wpabuf* query_buf = wpabuf_alloc(query.size());
+	if (!query_buf) {
+		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, {}};
+	}
+	wpabuf_put_data(query_buf, query.data(), query.size());
+	uint64_t identifier =
+	    wpas_p2p_sd_request(wpa_s, peer_address.data(), query_buf);
+	wpabuf_free(query_buf);
+	if (identifier == 0) {
+		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, {}};
+	}
+	return {{SupplicantStatusCode::SUCCESS, ""}, identifier};
 }
 
 SupplicantStatus P2pIface::cancelServiceDiscoveryInternal(uint64_t identifier)
 {
-	// TODO: Add implementation.
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (wpas_p2p_sd_cancel_request(wpa_s, identifier)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus P2pIface::setMiracastModeInternal(
+    ISupplicantP2pIface::MiracastMode mode)
+{
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	uint8_t mode_internal = convertHidlMiracastModeToInternal(mode);
+	const std::string cmd_str =
+	    kSetMiracastMode + std::to_string(mode_internal);
+	std::vector<char> cmd(
+	    cmd_str.c_str(), cmd_str.c_str() + cmd_str.size() + 1);
+	char driver_cmd_reply_buf[4096] = {};
+	if (wpa_drv_driver_cmd(
+		wpa_s, cmd.data(), driver_cmd_reply_buf,
+		sizeof(driver_cmd_reply_buf))) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
@@ -578,8 +884,16 @@ SupplicantStatus P2pIface::cancelServiceDiscoveryInternal(uint64_t identifier)
  */
 wpa_supplicant* P2pIface::retrieveIfacePtr()
 {
-	return wpa_supplicant_get_iface(
-	    (struct wpa_global*)wpa_global_, ifname_.c_str());
+	return wpa_supplicant_get_iface(wpa_global_, ifname_.c_str());
+}
+
+/**
+ * Retrieve the underlying |wpa_supplicant| struct
+ * pointer for this group iface.
+ */
+wpa_supplicant* P2pIface::retrieveGroupIfacePtr(const std::string& group_ifname)
+{
+	return wpa_supplicant_get_iface(wpa_global_, group_ifname.c_str());
 }
 
 }  // namespace implementation
