@@ -25,10 +25,8 @@ using android::hardware::IPCThreadState;
 using android::hardware::wifi::supplicant::V1_0::implementation::HidlManager;
 
 void wpas_hidl_sock_handler(
-    int /* sock */, void * /* eloop_ctx */, void *sock_ctx)
+    int /* sock */, void * /* eloop_ctx */, void * /* sock_ctx */)
 {
-	struct wpas_hidl_priv *priv = (wpas_hidl_priv *)sock_ctx;
-	wpa_printf(MSG_DEBUG, "Processing hidl events on FD %d", priv->hidl_fd);
 	IPCThreadState::self()->handlePolledCommands();
 }
 
@@ -289,4 +287,52 @@ void wpas_hidl_notify_assoc_reject(struct wpa_supplicant *wpa_s)
 		return;
 
 	hidl_manager->notifyAssocReject(wpa_s);
+}
+
+void wpas_hidl_notify_wps_event_fail(
+    struct wpa_supplicant *wpa_s, uint8_t *peer_macaddr, uint16_t config_error,
+    uint16_t error_indication)
+{
+	if (!wpa_s || !peer_macaddr)
+		return;
+
+	wpa_printf(
+	    MSG_DEBUG, "Notifying Wps event fail to hidl control: %d, %d",
+	    config_error, error_indication);
+
+	HidlManager *hidl_manager = HidlManager::getInstance();
+	if (!hidl_manager)
+		return;
+
+	hidl_manager->notifyWpsEventFail(
+	    wpa_s, peer_macaddr, config_error, error_indication);
+}
+
+void wpas_hidl_notify_wps_event_success(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s)
+		return;
+
+	wpa_printf(MSG_DEBUG, "Notifying Wps event success to hidl control");
+
+	HidlManager *hidl_manager = HidlManager::getInstance();
+	if (!hidl_manager)
+		return;
+
+	hidl_manager->notifyWpsEventSuccess(wpa_s);
+}
+
+void wpas_hidl_notify_wps_event_pbc_overlap(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s)
+		return;
+
+	wpa_printf(
+	    MSG_DEBUG, "Notifying Wps event PBC overlap to hidl control");
+
+	HidlManager *hidl_manager = HidlManager::getInstance();
+	if (!hidl_manager)
+		return;
+
+	hidl_manager->notifyWpsEventPbcOverlap(wpa_s);
 }
