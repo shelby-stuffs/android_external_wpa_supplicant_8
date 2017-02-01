@@ -92,7 +92,10 @@ OBJS += eap_register.c
 OBJS += src/utils/common.c
 OBJS += src/utils/wpa_debug.c
 OBJS += src/utils/wpabuf.c
+OBJS += src/utils/bitfield.c
 OBJS += wmm_ac.c
+OBJS += op_classes.c
+OBJS += rrm.c
 OBJS_p = wpa_passphrase.c
 OBJS_p += src/utils/common.c
 OBJS_p += src/utils/wpa_debug.c
@@ -269,6 +272,10 @@ ifdef CONFIG_PEERKEY
 L_CFLAGS += -DCONFIG_PEERKEY
 endif
 
+ifdef CONFIG_PMKSA_CACHE_EXTERNAL
+L_CFLAGS += -DCONFIG_PMKSA_CACHE_EXTERNAL
+endif
+
 ifndef CONFIG_NO_WPA
 OBJS += src/rsn_supp/wpa.c
 OBJS += src/rsn_supp/preauth.c
@@ -305,7 +312,6 @@ OBJS += src/p2p/p2p_invitation.c
 OBJS += src/p2p/p2p_dev_disc.c
 OBJS += src/p2p/p2p_group.c
 OBJS += src/ap/p2p_hostapd.c
-OBJS += src/utils/bitfield.c
 L_CFLAGS += -DCONFIG_P2P
 NEED_GAS=y
 NEED_OFFCHANNEL=y
@@ -1650,10 +1656,7 @@ LOCAL_CFLAGS = $(L_CFLAGS)
 LOCAL_SRC_FILES = src/common/wpa_ctrl.c src/utils/os_$(CONFIG_OS).c
 LOCAL_C_INCLUDES = $(INCLUDES)
 LOCAL_SHARED_LIBRARIES := libcutils liblog
-LOCAL_COPY_HEADERS_TO := libwpa_client
-LOCAL_COPY_HEADERS := src/common/wpa_ctrl.h
-LOCAL_COPY_HEADERS += src/common/qca-vendor.h
-LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/wpa_client_include
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/wpa_client_include $(LOCAL_PATH)/wpa_client_include/libwpa_client
 include $(BUILD_SHARED_LIBRARY)
 
 ifeq ($(WPA_SUPPLICANT_USE_HIDL), y)
@@ -1667,6 +1670,7 @@ LOCAL_C_INCLUDES := $(INCLUDES)
 LOCAL_SRC_FILES := \
     hidl/hidl.cpp \
     hidl/hidl_manager.cpp \
+    hidl/iface_config_utils.cpp \
     hidl/p2p_iface.cpp \
     hidl/p2p_network.cpp \
     hidl/sta_iface.cpp \

@@ -21,7 +21,10 @@ constexpr uint32_t kAllowedKeyMgmtMask =
     (static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::NONE) |
      static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::WPA_PSK) |
      static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::WPA_EAP) |
-     static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::IEEE8021X));
+     static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::IEEE8021X) |
+     static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::FT_EAP) |
+     static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::FT_PSK) |
+     static_cast<uint32_t>(ISupplicantStaNetwork::KeyMgmtMask::OSEN));
 constexpr uint32_t kAllowedproto_mask =
     (static_cast<uint32_t>(ISupplicantStaNetwork::ProtoMask::WPA) |
      static_cast<uint32_t>(ISupplicantStaNetwork::ProtoMask::RSN) |
@@ -34,7 +37,9 @@ constexpr uint32_t kAllowedgroup_cipher_mask =
     (static_cast<uint32_t>(ISupplicantStaNetwork::GroupCipherMask::WEP40) |
      static_cast<uint32_t>(ISupplicantStaNetwork::GroupCipherMask::WEP104) |
      static_cast<uint32_t>(ISupplicantStaNetwork::GroupCipherMask::TKIP) |
-     static_cast<uint32_t>(ISupplicantStaNetwork::GroupCipherMask::CCMP));
+     static_cast<uint32_t>(ISupplicantStaNetwork::GroupCipherMask::CCMP) |
+     static_cast<uint32_t>(
+	 ISupplicantStaNetwork::GroupCipherMask::GTK_NOT_USED));
 constexpr uint32_t kAllowedpairwise_cipher_mask =
     (static_cast<uint32_t>(ISupplicantStaNetwork::PairwiseCipherMask::NONE) |
      static_cast<uint32_t>(ISupplicantStaNetwork::PairwiseCipherMask::TKIP) |
@@ -50,6 +55,11 @@ constexpr char const *kEapPhase2MethodStrings[kEapPhase2MethodMax] = {
     "NULL", "PAP", "MSCHAP", "MSCHAPV2", "GTC"};
 constexpr char kEapPhase2AuthPrefix[] = "auth=";
 constexpr char kEapPhase2AuthEapPrefix[] = "autheap=";
+constexpr char kNetworkEapSimGsmAuthResponse[] = "GSM-AUTH";
+constexpr char kNetworkEapSimUmtsAuthResponse[] = "UMTS-AUTH";
+constexpr char kNetworkEapSimUmtsAutsResponse[] = "UMTS-AUTS";
+constexpr char kNetworkEapSimGsmAuthFailure[] = "GSM-FAIL";
+constexpr char kNetworkEapSimUmtsAuthFailure[] = "UMTS-FAIL";
 }  // namespace
 
 namespace android {
@@ -312,6 +322,30 @@ Return<void> StaNetwork::setEapDomainSuffixMatch(
 	    &StaNetwork::setEapDomainSuffixMatchInternal, _hidl_cb, match);
 }
 
+Return<void> StaNetwork::setProactiveKeyCaching(
+    bool enable, setProactiveKeyCaching_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
+	    &StaNetwork::setProactiveKeyCachingInternal, _hidl_cb, enable);
+}
+
+Return<void> StaNetwork::setIdStr(
+    const hidl_string &id_str, setIdStr_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
+	    &StaNetwork::setIdStrInternal, _hidl_cb, id_str);
+}
+
+Return<void> StaNetwork::setUpdateIdentifier(
+    uint32_t id, setUpdateIdentifier_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
+	    &StaNetwork::setUpdateIdentifierInternal, _hidl_cb, id);
+}
+
 Return<void> StaNetwork::getSsid(getSsid_cb _hidl_cb)
 {
 	return validateAndCall(
@@ -497,6 +531,13 @@ Return<void> StaNetwork::getEapDomainSuffixMatch(
 	    &StaNetwork::getEapDomainSuffixMatchInternal, _hidl_cb);
 }
 
+Return<void> StaNetwork::getIdStr(getIdStr_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
+	    &StaNetwork::getIdStrInternal, _hidl_cb);
+}
+
 Return<void> StaNetwork::enable(bool no_connect, enable_cb _hidl_cb)
 {
 	return validateAndCall(
@@ -519,13 +560,22 @@ Return<void> StaNetwork::select(select_cb _hidl_cb)
 }
 
 Return<void> StaNetwork::sendNetworkEapSimGsmAuthResponse(
-    const ISupplicantStaNetwork::NetworkResponseEapSimGsmAuthParams &params,
+    const hidl_vec<ISupplicantStaNetwork::NetworkResponseEapSimGsmAuthParams>
+	&vec_params,
     sendNetworkEapSimGsmAuthResponse_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
 	    &StaNetwork::sendNetworkEapSimGsmAuthResponseInternal, _hidl_cb,
-	    params);
+	    vec_params);
+}
+
+Return<void> StaNetwork::sendNetworkEapSimGsmAuthFailure(
+    sendNetworkEapSimGsmAuthFailure_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
+	    &StaNetwork::sendNetworkEapSimGsmAuthFailureInternal, _hidl_cb);
 }
 
 Return<void> StaNetwork::sendNetworkEapSimUmtsAuthResponse(
@@ -536,6 +586,24 @@ Return<void> StaNetwork::sendNetworkEapSimUmtsAuthResponse(
 	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
 	    &StaNetwork::sendNetworkEapSimUmtsAuthResponseInternal, _hidl_cb,
 	    params);
+}
+
+Return<void> StaNetwork::sendNetworkEapSimUmtsAutsResponse(
+    const hidl_array<uint8_t, 14> &auts,
+    sendNetworkEapSimUmtsAutsResponse_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
+	    &StaNetwork::sendNetworkEapSimUmtsAutsResponseInternal, _hidl_cb,
+	    auts);
+}
+
+Return<void> StaNetwork::sendNetworkEapSimUmtsAuthFailure(
+    sendNetworkEapSimUmtsAuthFailure_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_NETWORK_INVALID,
+	    &StaNetwork::sendNetworkEapSimUmtsAuthFailureInternal, _hidl_cb);
 }
 
 Return<void> StaNetwork::sendNetworkEapIdentityResponse(
@@ -986,6 +1054,34 @@ SupplicantStatus StaNetwork::setEapDomainSuffixMatchInternal(
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
+SupplicantStatus StaNetwork::setProactiveKeyCachingInternal(bool enable)
+{
+	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
+	wpa_ssid->proactive_key_caching = enable ? 1 : 0;
+	resetInternalStateAfterParamsUpdate();
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus StaNetwork::setIdStrInternal(const std::string &id_str)
+{
+	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
+	if (setStringFieldAndResetState(
+		id_str.c_str(), &(wpa_ssid->id_str), "id_str")) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus StaNetwork::setUpdateIdentifierInternal(uint32_t id)
+{
+	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
+	wpa_ssid->update_identifier = id;
+	wpa_printf(
+	    MSG_MSGDUMP, "update_identifier: %d", wpa_ssid->update_identifier);
+	resetInternalStateAfterParamsUpdate();
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
 std::pair<SupplicantStatus, std::vector<uint8_t>> StaNetwork::getSsidInternal()
 {
 	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
@@ -1274,6 +1370,15 @@ StaNetwork::getEapDomainSuffixMatchInternal()
 		{wpa_ssid->eap.domain_suffix_match}};
 }
 
+std::pair<SupplicantStatus, std::string> StaNetwork::getIdStrInternal()
+{
+	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
+	if (!wpa_ssid->id_str) {
+		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, {}};
+	}
+	return {{SupplicantStatusCode::SUCCESS, ""}, {wpa_ssid->id_str}};
+}
+
 SupplicantStatus StaNetwork::enableInternal(bool no_connect)
 {
 	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
@@ -1316,22 +1421,27 @@ SupplicantStatus StaNetwork::selectInternal()
 }
 
 SupplicantStatus StaNetwork::sendNetworkEapSimGsmAuthResponseInternal(
-    const ISupplicantStaNetwork::NetworkResponseEapSimGsmAuthParams &params)
+    const std::vector<ISupplicantStaNetwork::NetworkResponseEapSimGsmAuthParams>
+	&vec_params)
 {
 	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
 	// Convert the incoming parameters to a string to pass to
 	// wpa_supplicant.
-	uint32_t kc_hex_len = params.kc.size() * 2 + 1;
-	std::vector<char> kc_hex(kc_hex_len);
-	uint32_t sres_hex_len = params.sres.size() * 2 + 1;
-	std::vector<char> sres_hex(sres_hex_len);
-	wpa_snprintf_hex(
-	    kc_hex.data(), kc_hex.size(), params.kc.data(), params.kc.size());
-	wpa_snprintf_hex(
-	    sres_hex.data(), sres_hex.size(), params.sres.data(),
-	    params.sres.size());
-	std::string ctrl_rsp_param = ":" + std::string(kc_hex.data()) + ":" +
-				     std::string(sres_hex.data());
+	std::string ctrl_rsp_param = std::string(kNetworkEapSimGsmAuthResponse);
+	for (const auto &params : vec_params) {
+		uint32_t kc_hex_len = params.kc.size() * 2 + 1;
+		std::vector<char> kc_hex(kc_hex_len);
+		uint32_t sres_hex_len = params.sres.size() * 2 + 1;
+		std::vector<char> sres_hex(sres_hex_len);
+		wpa_snprintf_hex(
+		    kc_hex.data(), kc_hex.size(), params.kc.data(),
+		    params.kc.size());
+		wpa_snprintf_hex(
+		    sres_hex.data(), sres_hex.size(), params.sres.data(),
+		    params.sres.size());
+		ctrl_rsp_param += ":" + std::string(kc_hex.data()) + ":" +
+				  std::string(sres_hex.data());
+	}
 	enum wpa_ctrl_req_type rtype = WPA_CTRL_REQ_SIM;
 	struct wpa_supplicant *wpa_s = retrieveIfacePtr();
 	if (wpa_supplicant_ctrl_rsp_handle(
@@ -1342,6 +1452,19 @@ SupplicantStatus StaNetwork::sendNetworkEapSimGsmAuthResponseInternal(
 	wpa_hexdump_ascii_key(
 	    MSG_DEBUG, "network sim gsm auth response param",
 	    (const u8 *)ctrl_rsp_param.c_str(), ctrl_rsp_param.size());
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus StaNetwork::sendNetworkEapSimGsmAuthFailureInternal()
+{
+	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
+	struct wpa_supplicant *wpa_s = retrieveIfacePtr();
+	enum wpa_ctrl_req_type rtype = WPA_CTRL_REQ_SIM;
+	if (wpa_supplicant_ctrl_rsp_handle(
+		wpa_s, wpa_ssid, rtype, kNetworkEapSimGsmAuthFailure)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	eapol_sm_notify_ctrl_response(wpa_s->eapol);
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
@@ -1364,9 +1487,10 @@ SupplicantStatus StaNetwork::sendNetworkEapSimUmtsAuthResponseInternal(
 	wpa_snprintf_hex(
 	    res_hex.data(), res_hex.size(), params.res.data(),
 	    params.res.size());
-	std::string ctrl_rsp_param = ":" + std::string(ik_hex.data()) + ":" +
-				     std::string(ck_hex.data()) + ":" +
-				     std::string(res_hex.data());
+	std::string ctrl_rsp_param =
+	    std::string(kNetworkEapSimUmtsAuthResponse) + ":" +
+	    std::string(ik_hex.data()) + ":" + std::string(ck_hex.data()) +
+	    ":" + std::string(res_hex.data());
 	enum wpa_ctrl_req_type rtype = WPA_CTRL_REQ_SIM;
 	struct wpa_supplicant *wpa_s = retrieveIfacePtr();
 	if (wpa_supplicant_ctrl_rsp_handle(
@@ -1377,6 +1501,43 @@ SupplicantStatus StaNetwork::sendNetworkEapSimUmtsAuthResponseInternal(
 	wpa_hexdump_ascii_key(
 	    MSG_DEBUG, "network sim umts auth response param",
 	    (const u8 *)ctrl_rsp_param.c_str(), ctrl_rsp_param.size());
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus StaNetwork::sendNetworkEapSimUmtsAutsResponseInternal(
+    const std::array<uint8_t, 14> &auts)
+{
+	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
+	uint32_t auts_hex_len = auts.size() * 2 + 1;
+	std::vector<char> auts_hex(auts_hex_len);
+	wpa_snprintf_hex(
+	    auts_hex.data(), auts_hex.size(), auts.data(), auts.size());
+	std::string ctrl_rsp_param =
+	    std::string(kNetworkEapSimUmtsAutsResponse) + ":" +
+	    std::string(auts_hex.data());
+	enum wpa_ctrl_req_type rtype = WPA_CTRL_REQ_SIM;
+	struct wpa_supplicant *wpa_s = retrieveIfacePtr();
+	if (wpa_supplicant_ctrl_rsp_handle(
+		wpa_s, wpa_ssid, rtype, ctrl_rsp_param.c_str())) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	eapol_sm_notify_ctrl_response(wpa_s->eapol);
+	wpa_hexdump_ascii_key(
+	    MSG_DEBUG, "network sim umts auts response param",
+	    (const u8 *)ctrl_rsp_param.c_str(), ctrl_rsp_param.size());
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus StaNetwork::sendNetworkEapSimUmtsAuthFailureInternal()
+{
+	struct wpa_ssid *wpa_ssid = retrieveNetworkPtr();
+	struct wpa_supplicant *wpa_s = retrieveIfacePtr();
+	enum wpa_ctrl_req_type rtype = WPA_CTRL_REQ_SIM;
+	if (wpa_supplicant_ctrl_rsp_handle(
+		wpa_s, wpa_ssid, rtype, kNetworkEapSimUmtsAuthFailure)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	eapol_sm_notify_ctrl_response(wpa_s->eapol);
 	return {SupplicantStatusCode::SUCCESS, ""};
 }
 
