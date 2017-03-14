@@ -27,6 +27,9 @@ L_CFLAGS += -DANDROID_LOG_NAME=\"hostapd\"
 # Disable unused parameter warnings
 L_CFLAGS += -Wno-unused-parameter
 
+# Disable macro redefined warnings
+L_CFLAGS += -Wno-macro-redefined
+
 # Set Android extended P2P functionality
 L_CFLAGS += -DANDROID_P2P
 
@@ -152,7 +155,6 @@ OBJS += src/common/hw_features_common.c
 
 OBJS += src/eapol_auth/eapol_auth_sm.c
 
-
 ifndef CONFIG_NO_DUMP_STATE
 # define HOSTAPD_DUMP_STATE to include support for dumping internal state
 # through control interface commands (undefine it, if you want to save in
@@ -263,7 +265,7 @@ endif
 
 ifdef CONFIG_FILS
 L_CFLAGS += -DCONFIG_FILS
-NEED_CRC32=y
+OBJS += src/ap/fils_hlp.c
 NEED_SHA384=y
 NEED_AES_SIV=y
 endif
@@ -279,6 +281,10 @@ endif
 
 ifdef CONFIG_IEEE80211AC
 L_CFLAGS += -DCONFIG_IEEE80211AC
+endif
+
+ifdef CONFIG_IEEE80211AX
+L_CFLAGS += -DCONFIG_IEEE80211AX
 endif
 
 ifdef CONFIG_MBO
@@ -836,6 +842,9 @@ endif
 endif
 ifdef NEED_SHA384
 L_CFLAGS += -DCONFIG_SHA384
+ifneq ($(CONFIG_TLS), openssl)
+OBJS += src/crypto/sha384.c
+endif
 OBJS += src/crypto/sha384-prf.c
 endif
 
@@ -863,10 +872,6 @@ endif
 
 ifdef NEED_ECC
 L_CFLAGS += -DCONFIG_ECC
-endif
-
-ifdef NEED_CRC32
-OBJS += src/utils/crc32.c
 endif
 
 ifdef CONFIG_NO_RANDOM_POOL
@@ -912,6 +917,10 @@ endif
 
 ifdef CONFIG_IEEE80211AC
 OBJS += src/ap/ieee802_11_vht.c
+endif
+
+ifdef CONFIG_IEEE80211AX
+OBJS += src/ap/ieee802_11_he.c
 endif
 
 ifdef CONFIG_P2P_MANAGER
@@ -989,6 +998,7 @@ endif
 include $(CLEAR_VARS)
 LOCAL_MODULE := hostapd_cli
 LOCAL_MODULE_TAGS := debug
+LOCAL_PROPRIETARY_MODULE := true
 LOCAL_SHARED_LIBRARIES := libc libcutils liblog
 LOCAL_CFLAGS := $(L_CFLAGS)
 LOCAL_SRC_FILES := $(OBJS_c)
@@ -999,6 +1009,7 @@ include $(BUILD_EXECUTABLE)
 include $(CLEAR_VARS)
 LOCAL_MODULE := hostapd
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
 ifdef CONFIG_DRIVER_CUSTOM
 LOCAL_STATIC_LIBRARIES := libCustomWifi
 endif

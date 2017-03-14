@@ -37,7 +37,7 @@ constexpr char kSetBtCoexistenceScanStart[] = "BTCOEXSCAN-START";
 constexpr char kSetBtCoexistenceScanStop[] = "BTCOEXSCAN-STOP";
 constexpr char kSetSupendModeEnabled[] = "SETSUSPENDMODE 1";
 constexpr char kSetSupendModeDisabled[] = "SETSUSPENDMODE 0";
-constexpr char kSetCountryCode[] = "COUNTRY ";
+constexpr char kSetCountryCode[] = "COUNTRY";
 constexpr uint32_t kExtRadioWorkDefaultTimeoutInSec = static_cast<uint32_t>(
     ISupplicantStaIface::ExtRadioWorkDefaults::TIMEOUT_IN_SECS);
 constexpr char kExtRadioWorkNamePrefix[] = "ext:";
@@ -728,7 +728,7 @@ StaIface::getMacAddressInternal()
 	    sizeof(driver_cmd_reply_buf));
 	// Reply is of the format: "Macaddr = XX:XX:XX:XX:XX:XX"
 	std::string reply_str = driver_cmd_reply_buf;
-	if (ret || reply_str.empty() ||
+	if (ret < 0 || reply_str.empty() ||
 	    reply_str.find("=") == std::string::npos) {
 		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, {}};
 	}

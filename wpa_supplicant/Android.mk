@@ -25,6 +25,9 @@ L_CFLAGS += -DANDROID_LOG_NAME=\"wpa_supplicant\"
 # Disable unused parameter warnings
 L_CFLAGS += -Wno-unused-parameter
 
+# Disable redefined macro warnings
+L_CFLAGS += -Wno-macro-redefined
+
 # Set Android extended P2P functionality
 L_CFLAGS += -DANDROID_P2P
 
@@ -247,7 +250,6 @@ endif
 
 ifdef CONFIG_FILS
 L_CFLAGS += -DCONFIG_FILS
-NEED_CRC32=y
 NEED_SHA384=y
 NEED_AES_SIV=y
 endif
@@ -828,12 +830,18 @@ OBJS += src/ap/ieee802_11_ht.c
 ifdef CONFIG_IEEE80211AC
 OBJS += src/ap/ieee802_11_vht.c
 endif
+ifdef CONFIG_IEEE80211AX
+OBJS += src/ap/ieee802_11_he.c
+endif
 endif
 ifdef CONFIG_WNM
 OBJS += src/ap/wnm_ap.c
 endif
 ifdef CONFIG_MBO
 OBJS += src/ap/mbo_ap.c
+endif
+ifdef CONFIG_FILS
+OBJS += src/ap/fils_hlp.c
 endif
 ifdef CONFIG_CTRL_IFACE
 OBJS += src/ap/ctrl_iface_ap.c
@@ -848,6 +856,9 @@ ifdef CONFIG_IEEE80211N
 L_CFLAGS += -DCONFIG_IEEE80211N
 ifdef CONFIG_IEEE80211AC
 L_CFLAGS += -DCONFIG_IEEE80211AC
+endif
+ifdef CONFIG_IEEE80211AX
+L_CFLAGS += -DCONFIG_IEEE80211AX
 endif
 endif
 
@@ -1283,6 +1294,9 @@ OBJS += $(SHA256OBJS)
 endif
 ifdef NEED_SHA384
 L_CFLAGS += -DCONFIG_SHA384
+ifneq ($(CONFIG_TLS), openssl)
+OBJS += src/crypto/sha384.c
+endif
 OBJS += src/crypto/sha384-prf.c
 endif
 
@@ -1300,10 +1314,6 @@ endif
 
 ifdef NEED_ECC
 L_CFLAGS += -DCONFIG_ECC
-endif
-
-ifdef NEED_CRC32
-OBJS += src/utils/crc32.c
 endif
 
 ifdef CONFIG_NO_RANDOM_POOL
@@ -1575,6 +1585,7 @@ endif
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := wpa_cli
+LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_TAGS := debug
 LOCAL_SHARED_LIBRARIES := libc libcutils liblog
 LOCAL_CFLAGS := $(L_CFLAGS)
@@ -1585,6 +1596,8 @@ include $(BUILD_EXECUTABLE)
 ########################
 include $(CLEAR_VARS)
 LOCAL_MODULE := wpa_supplicant
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_RELATIVE_PATH := hw
 ifdef CONFIG_DRIVER_CUSTOM
 LOCAL_STATIC_LIBRARIES := libCustomWifi
 endif
@@ -1652,6 +1665,7 @@ include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE = libwpa_client
+LOCAL_PROPRIETARY_MODULE := true
 LOCAL_CFLAGS = $(L_CFLAGS)
 LOCAL_SRC_FILES = src/common/wpa_ctrl.c src/utils/os_$(CONFIG_OS).c
 LOCAL_C_INCLUDES = $(INCLUDES)
