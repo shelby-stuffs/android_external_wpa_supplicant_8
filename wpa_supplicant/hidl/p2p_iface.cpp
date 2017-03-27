@@ -456,7 +456,7 @@ Return<void> P2pIface::enableWfd(bool enable, enableWfd_cb _hidl_cb)
 }
 
 Return<void> P2pIface::setWfdDeviceInfo(
-    const hidl_array<uint8_t, 8>& info, setWfdDeviceInfo_cb _hidl_cb)
+    const hidl_array<uint8_t, 6>& info, setWfdDeviceInfo_cb _hidl_cb)
 {
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
@@ -493,6 +493,13 @@ Return<void> P2pIface::reportNfcHandoverInitiation(
 	return validateAndCall(
 	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
 	    &P2pIface::reportNfcHandoverInitiationInternal, _hidl_cb, select);
+}
+
+Return<void> P2pIface::saveConfig(saveConfig_cb _hidl_cb)
+{
+	return validateAndCall(
+	    this, SupplicantStatusCode::FAILURE_IFACE_INVALID,
+	    &P2pIface::saveConfigInternal, _hidl_cb);
 }
 
 std::pair<SupplicantStatus, std::string> P2pIface::getNameInternal()
@@ -696,8 +703,7 @@ std::pair<SupplicantStatus, std::string> P2pIface::connectInternal(
 	std::string pin_ret;
 	if (provision_method == WpsProvisionMethod::DISPLAY &&
 	    pre_selected_pin.empty()) {
-		pin_ret.reserve(9);
-		os_snprintf(&pin_ret[0], pin_ret.size(), "%08d", new_pin);
+		pin_ret = misc_utils::convertWpsPinToString(new_pin);
 	}
 	return {{SupplicantStatusCode::SUCCESS, ""}, pin_ret};
 }
@@ -1058,10 +1064,8 @@ std::pair<SupplicantStatus, std::string> P2pIface::startWpsPinDisplayInternal(
 	if (pin < 0) {
 		return {{SupplicantStatusCode::FAILURE_UNKNOWN, ""}, ""};
 	}
-	std::string pin_str;
-	pin_str.reserve(9);
-	snprintf(&pin_str[0], pin_str.size(), "%08d", pin);
-	return {{SupplicantStatusCode::SUCCESS, ""}, pin_str};
+	return {{SupplicantStatusCode::SUCCESS, ""},
+		misc_utils::convertWpsPinToString(pin)};
 }
 
 SupplicantStatus P2pIface::cancelWpsInternal(const std::string& group_ifname)
@@ -1130,7 +1134,7 @@ SupplicantStatus P2pIface::enableWfdInternal(bool enable)
 }
 
 SupplicantStatus P2pIface::setWfdDeviceInfoInternal(
-    const std::array<uint8_t, 8>& info)
+    const std::array<uint8_t, 6>& info)
 {
 	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
 	uint32_t wfd_device_info_hex_len = info.size() * 2 + 1;
@@ -1205,6 +1209,18 @@ SupplicantStatus P2pIface::reportNfcHandoverInitiationInternal(
 	}
 
 	if (wpas_p2p_nfc_report_handover(wpa_s, 1, req.get(), sel.get(), 0)) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	return {SupplicantStatusCode::SUCCESS, ""};
+}
+
+SupplicantStatus P2pIface::saveConfigInternal()
+{
+	struct wpa_supplicant* wpa_s = retrieveIfacePtr();
+	if (!wpa_s->conf->update_config) {
+		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
+	}
+	if (wpa_config_write(wpa_s->confname, wpa_s->conf)) {
 		return {SupplicantStatusCode::FAILURE_UNKNOWN, ""};
 	}
 	return {SupplicantStatusCode::SUCCESS, ""};

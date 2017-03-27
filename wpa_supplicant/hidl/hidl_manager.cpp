@@ -20,7 +20,7 @@ extern "C" {
 namespace {
 using android::hardware::hidl_array;
 
-constexpr uint8_t kWfdDeviceInfoLen = 8;
+constexpr uint8_t kWfdDeviceInfoLen = 6;
 // GSM-AUTH:<RAND1>:<RAND2>[:<RAND3>]
 constexpr char kGsmAuthRegex2[] = "GSM-AUTH:([0-9a-f]+):([0-9a-f]+)";
 constexpr char kGsmAuthRegex3[] =
@@ -650,13 +650,22 @@ int HidlManager::notifyStateChange(struct wpa_supplicant *wpa_s)
 		    wpa_s->current_ssid->ssid,
 		    wpa_s->current_ssid->ssid + wpa_s->current_ssid->ssid_len);
 	}
+	uint8_t *bssid;
+	// wpa_supplicant sets the |pending_bssid| field when it starts a
+	// connection. Only after association state does it update the |bssid|
+	// field. So, in the HIDL callback send the appropriate bssid.
+	if (wpa_s->wpa_state <= WPA_ASSOCIATED) {
+		bssid = wpa_s->pending_bssid;
+	} else {
+		bssid = wpa_s->bssid;
+	}
 	callWithEachStaIfaceCallback(
 	    wpa_s->ifname, std::bind(
 			       &ISupplicantStaIfaceCallback::onStateChanged,
 			       std::placeholders::_1,
 			       static_cast<ISupplicantStaIfaceCallback::State>(
 				   wpa_s->wpa_state),
-			       wpa_s->bssid, hidl_network_id, hidl_ssid));
+			       bssid, hidl_network_id, hidl_ssid));
 	return 0;
 }
 
@@ -942,14 +951,53 @@ void HidlManager::notifyAuthTimeout(struct wpa_supplicant *wpa_s)
 	if (is_zero_ether_addr(bssid)) {
 		bssid = wpa_s->pending_bssid;
 	}
-	std::array<uint8_t, ETH_ALEN> hidl_bssid;
-	os_memcpy(hidl_bssid.data(), bssid, ETH_ALEN);
-
 	callWithEachStaIfaceCallback(
 	    wpa_s->ifname,
 	    std::bind(
 		&ISupplicantStaIfaceCallback::onAuthenticationTimeout,
-		std::placeholders::_1, hidl_bssid));
+		std::placeholders::_1, bssid));
+}
+
+void HidlManager::notifyBssidChanged(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s)
+		return;
+
+	const std::string ifname(wpa_s->ifname);
+	if (sta_iface_object_map_.find(ifname) == sta_iface_object_map_.end())
+		return;
+
+	// wpa_supplicant does not explicitly give us the reason for bssid
+	// change, but we figure that out from what is set out of |wpa_s->bssid|
+	// & |wpa_s->pending_bssid|.
+	const u8 *bssid;
+	ISupplicantStaIfaceCallback::BssidChangeReason reason;
+	if (is_zero_ether_addr(wpa_s->bssid) &&
+	    !is_zero_ether_addr(wpa_s->pending_bssid)) {
+		bssid = wpa_s->pending_bssid;
+		reason =
+		    ISupplicantStaIfaceCallback::BssidChangeReason::ASSOC_START;
+	} else if (
+	    !is_zero_ether_addr(wpa_s->bssid) &&
+	    is_zero_ether_addr(wpa_s->pending_bssid)) {
+		bssid = wpa_s->bssid;
+		reason = ISupplicantStaIfaceCallback::BssidChangeReason::
+		    ASSOC_COMPLETE;
+	} else if (
+	    is_zero_ether_addr(wpa_s->bssid) &&
+	    is_zero_ether_addr(wpa_s->pending_bssid)) {
+		bssid = wpa_s->pending_bssid;
+		reason =
+		    ISupplicantStaIfaceCallback::BssidChangeReason::DISASSOC;
+	} else {
+		wpa_printf(MSG_ERROR, "Unknown bssid change reason");
+		return;
+	}
+
+	callWithEachStaIfaceCallback(
+	    wpa_s->ifname, std::bind(
+			       &ISupplicantStaIfaceCallback::onBssidChanged,
+			       std::placeholders::_1, reason, bssid));
 }
 
 void HidlManager::notifyWpsEventFail(
@@ -1232,10 +1280,8 @@ void HidlManager::notifyP2pProvisionDiscovery(
 
 	std::string hidl_generated_pin;
 	if (generated_pin > 0) {
-		hidl_generated_pin.reserve(9);
-		os_snprintf(
-		    &hidl_generated_pin[0], hidl_generated_pin.size(), "%08d",
-		    generated_pin);
+		hidl_generated_pin =
+		    misc_utils::convertWpsPinToString(generated_pin);
 	}
 	bool hidl_is_request = (request == 1 ? true : false);
 
