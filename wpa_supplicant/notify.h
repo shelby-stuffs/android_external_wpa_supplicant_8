@@ -113,8 +113,8 @@ void wpas_notify_p2p_provision_discovery(struct wpa_supplicant *wpa_s,
 					 u16 config_methods,
 					 unsigned int generated_pin);
 void wpas_notify_p2p_group_started(struct wpa_supplicant *wpa_s,
-				   struct wpa_ssid *ssid, int network_id,
-				   int client);
+				   struct wpa_ssid *ssid, int persistent,
+				   int client, const u8 *ip);
 void wpas_notify_p2p_group_formation_failure(struct wpa_supplicant *wpa_s,
 					     const char *reason);
 void wpas_notify_persistent_group_added(struct wpa_supplicant *wpa_s,

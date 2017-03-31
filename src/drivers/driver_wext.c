@@ -362,12 +362,11 @@ static int wpa_driver_wext_event_wireless_assocreqie(
 	wpa_hexdump(MSG_DEBUG, "AssocReq IE wireless event", (const u8 *) ev,
 		    len);
 	os_free(drv->assoc_req_ies);
-	drv->assoc_req_ies = os_malloc(len);
+	drv->assoc_req_ies = os_memdup(ev, len);
 	if (drv->assoc_req_ies == NULL) {
 		drv->assoc_req_ies_len = 0;
 		return -1;
 	}
-	os_memcpy(drv->assoc_req_ies, ev, len);
 	drv->assoc_req_ies_len = len;
 
 	return 0;
@@ -383,12 +382,11 @@ static int wpa_driver_wext_event_wireless_assocrespie(
 	wpa_hexdump(MSG_DEBUG, "AssocResp IE wireless event", (const u8 *) ev,
 		    len);
 	os_free(drv->assoc_resp_ies);
-	drv->assoc_resp_ies = os_malloc(len);
+	drv->assoc_resp_ies = os_memdup(ev, len);
 	if (drv->assoc_resp_ies == NULL) {
 		drv->assoc_resp_ies_len = 0;
 		return -1;
 	}
-	os_memcpy(drv->assoc_resp_ies, ev, len);
 	drv->assoc_resp_ies_len = len;
 
 	return 0;
@@ -1042,6 +1040,7 @@ void wpa_driver_wext_deinit(void *priv)
 	wpa_driver_wext_set_auth_param(drv, IW_AUTH_WPA_ENABLED, 0);
 
 	eloop_cancel_timeout(wpa_driver_wext_scan_timeout, drv, drv->ctx);
+	eloop_cancel_timeout(wpa_driver_wext_send_rfkill, drv, drv->ctx);
 
 	/*
 	 * Clear possibly configured driver parameters in order to make it

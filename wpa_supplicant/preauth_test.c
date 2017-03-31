@@ -143,7 +143,7 @@ static int wpa_supplicant_mlme_setprotection(void *wpa_s, const u8 *addr,
 }
 
 
-static int wpa_supplicant_add_pmkid(void *wpa_s,
+static int wpa_supplicant_add_pmkid(void *wpa_s, void *network_ctx,
 				    const u8 *bssid, const u8 *pmkid)
 {
 	printf("%s - not implemented\n", __func__);
@@ -151,7 +151,7 @@ static int wpa_supplicant_add_pmkid(void *wpa_s,
 }
 
 
-static int wpa_supplicant_remove_pmkid(void *wpa_s,
+static int wpa_supplicant_remove_pmkid(void *wpa_s, void *network_ctx,
 				       const u8 *bssid, const u8 *pmkid)
 {
 	printf("%s - not implemented\n", __func__);
@@ -344,8 +344,8 @@ int main(int argc, char *argv[])
 	if (preauth_test.auth_timed_out)
 		ret = -2;
 	else {
-		ret = pmksa_cache_set_current(wpa_s.wpa, NULL, bssid, NULL, 0)
-			? 0 : -3;
+		ret = pmksa_cache_set_current(wpa_s.wpa, NULL, bssid, NULL, 0,
+					      NULL) ? 0 : -3;
 	}
 
 	test_eapol_clean(&wpa_s);

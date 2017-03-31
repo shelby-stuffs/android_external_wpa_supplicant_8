@@ -1,6 +1,6 @@
 /*
  * Wrapper functions for OpenSSL libcrypto
- * Copyright (c) 2004-2015, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2017, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -29,6 +29,8 @@
 #include "sha1.h"
 #include "sha256.h"
 #include "sha384.h"
+#include "md5.h"
+#include "aes_wrap.h"
 #include "crypto.h"
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
@@ -47,6 +49,8 @@ static HMAC_CTX * HMAC_CTX_new(void)
 
 static void HMAC_CTX_free(HMAC_CTX *ctx)
 {
+	if (!ctx)
+		return;
 	HMAC_CTX_cleanup(ctx);
 	bin_clear_free(ctx, sizeof(*ctx));
 }
@@ -65,6 +69,9 @@ static EVP_MD_CTX * EVP_MD_CTX_new(void)
 
 static void EVP_MD_CTX_free(EVP_MD_CTX *ctx)
 {
+	if (!ctx)
+		return;
+	EVP_MD_CTX_cleanup(ctx);
 	bin_clear_free(ctx, sizeof(*ctx));
 }
 
@@ -72,7 +79,11 @@ static void EVP_MD_CTX_free(EVP_MD_CTX *ctx)
 
 static BIGNUM * get_group5_prime(void)
 {
-#ifdef OPENSSL_IS_BORINGSSL
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
+	return BN_get_rfc3526_prime_1536(NULL);
+#elif !defined(OPENSSL_IS_BORINGSSL)
+	return get_rfc3526_prime_1536(NULL);
+#else
 	static const unsigned char RFC3526_PRIME_1536[] = {
 		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xC9,0x0F,0xDA,0xA2,
 		0x21,0x68,0xC2,0x34,0xC4,0xC6,0x62,0x8B,0x80,0xDC,0x1C,0xD1,
@@ -92,13 +103,14 @@ static BIGNUM * get_group5_prime(void)
 		0xCA,0x23,0x73,0x27,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
 	};
         return BN_bin2bn(RFC3526_PRIME_1536, sizeof(RFC3526_PRIME_1536), NULL);
-#else /* OPENSSL_IS_BORINGSSL */
-	return get_rfc3526_prime_1536(NULL);
-#endif /* OPENSSL_IS_BORINGSSL */
+#endif
 }
 
 #ifdef OPENSSL_NO_SHA256
 #define NO_SHA256_WRAPPER
+#endif
+#ifdef OPENSSL_NO_SHA512
+#define NO_SHA384_WRAPPER
 #endif
 
 static int openssl_digest_vector(const EVP_MD *type, size_t num_elem,
@@ -149,7 +161,7 @@ int md4_vector(size_t num_elem, const u8 *addr[], const size_t *len, u8 *mac)
 #endif /* CONFIG_FIPS */
 
 
-void des_encrypt(const u8 *clear, const u8 *key, u8 *cypher)
+int des_encrypt(const u8 *clear, const u8 *key, u8 *cypher)
 {
 	u8 pkey[8], next, tmp;
 	int i;
@@ -167,6 +179,7 @@ void des_encrypt(const u8 *clear, const u8 *key, u8 *cypher)
 	DES_set_key((DES_cblock *) &pkey, &ks);
 	DES_ecb_encrypt((DES_cblock *) clear, (DES_cblock *) cypher, &ks,
 			DES_ENCRYPT);
+	return 0;
 }
 
 
@@ -233,6 +246,14 @@ int sha256_vector(size_t num_elem, const u8 *addr[], const size_t *len,
 }
 #endif /* NO_SHA256_WRAPPER */
 
+#ifndef NO_SHA384_WRAPPER
+int sha384_vector(size_t num_elem, const u8 *addr[], const size_t *len,
+		  u8 *mac)
+{
+	return openssl_digest_vector(EVP_sha384(), num_elem, addr, len, mac);
+}
+#endif /* NO_SHA384_WRAPPER */
+
 
 static const EVP_CIPHER * aes_get_evp_cipher(size_t keylen)
 {
@@ -275,14 +296,16 @@ void * aes_encrypt_init(const u8 *key, size_t len)
 }
 
 
-void aes_encrypt(void *ctx, const u8 *plain, u8 *crypt)
+int aes_encrypt(void *ctx, const u8 *plain, u8 *crypt)
 {
 	EVP_CIPHER_CTX *c = ctx;
 	int clen = 16;
 	if (EVP_EncryptUpdate(c, crypt, &clen, plain, 16) != 1) {
 		wpa_printf(MSG_ERROR, "OpenSSL: EVP_EncryptUpdate failed: %s",
 			   ERR_error_string(ERR_get_error(), NULL));
+		return -1;
 	}
+	return 0;
 }
 
 
@@ -327,14 +350,16 @@ void * aes_decrypt_init(const u8 *key, size_t len)
 }
 
 
-void aes_decrypt(void *ctx, const u8 *crypt, u8 *plain)
+int aes_decrypt(void *ctx, const u8 *crypt, u8 *plain)
 {
 	EVP_CIPHER_CTX *c = ctx;
 	int plen = 16;
 	if (EVP_DecryptUpdate(c, plain, &plen, crypt, 16) != 1) {
 		wpa_printf(MSG_ERROR, "OpenSSL: EVP_DecryptUpdate failed: %s",
 			   ERR_error_string(ERR_get_error(), NULL));
+		return -1;
 	}
+	return 0;
 }
 
 
@@ -363,6 +388,8 @@ int aes_wrap(const u8 *kek, size_t kek_len, int n, const u8 *plain, u8 *cipher)
 	AES_KEY actx;
 	int res;
 
+	if (TEST_FAIL())
+		return -1;
 	if (AES_set_encrypt_key(kek, kek_len << 3, &actx))
 		return -1;
 	res = AES_wrap_key(&actx, NULL, cipher, plain, n * 8);
@@ -377,6 +404,8 @@ int aes_unwrap(const u8 *kek, size_t kek_len, int n, const u8 *cipher,
 	AES_KEY actx;
 	int res;
 
+	if (TEST_FAIL())
+		return -1;
 	if (AES_set_decrypt_key(kek, kek_len << 3, &actx))
 		return -1;
 	res = AES_unwrap_key(&actx, NULL, plain, cipher, (n + 1) * 8);
@@ -602,11 +631,13 @@ void crypto_cipher_deinit(struct crypto_cipher *ctx)
 
 void * dh5_init(struct wpabuf **priv, struct wpabuf **publ)
 {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
 	DH *dh;
 	struct wpabuf *pubkey = NULL, *privkey = NULL;
 	size_t publen, privlen;
 
 	*priv = NULL;
+	wpabuf_free(*publ);
 	*publ = NULL;
 
 	dh = DH_new();
@@ -645,11 +676,63 @@ err:
 	wpabuf_clear_free(privkey);
 	DH_free(dh);
 	return NULL;
+#else
+	DH *dh;
+	struct wpabuf *pubkey = NULL, *privkey = NULL;
+	size_t publen, privlen;
+	BIGNUM *p = NULL, *g;
+	const BIGNUM *priv_key = NULL, *pub_key = NULL;
+
+	*priv = NULL;
+	wpabuf_free(*publ);
+	*publ = NULL;
+
+	dh = DH_new();
+	if (dh == NULL)
+		return NULL;
+
+	g = BN_new();
+	p = get_group5_prime();
+	if (!g || BN_set_word(g, 2) != 1 || !p ||
+	    DH_set0_pqg(dh, p, NULL, g) != 1)
+		goto err;
+	p = NULL;
+	g = NULL;
+
+	if (DH_generate_key(dh) != 1)
+		goto err;
+
+	DH_get0_key(dh, &pub_key, &priv_key);
+	publen = BN_num_bytes(pub_key);
+	pubkey = wpabuf_alloc(publen);
+	if (!pubkey)
+		goto err;
+	privlen = BN_num_bytes(priv_key);
+	privkey = wpabuf_alloc(privlen);
+	if (!privkey)
+		goto err;
+
+	BN_bn2bin(pub_key, wpabuf_put(pubkey, publen));
+	BN_bn2bin(priv_key, wpabuf_put(privkey, privlen));
+
+	*priv = privkey;
+	*publ = pubkey;
+	return dh;
+
+err:
+	BN_free(p);
+	BN_free(g);
+	wpabuf_clear_free(pubkey);
+	wpabuf_clear_free(privkey);
+	DH_free(dh);
+	return NULL;
+#endif
 }
 
 
 void * dh5_init_fixed(const struct wpabuf *priv, const struct wpabuf *publ)
 {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
 	DH *dh;
 
 	dh = DH_new();
@@ -680,6 +763,42 @@ void * dh5_init_fixed(const struct wpabuf *priv, const struct wpabuf *publ)
 err:
 	DH_free(dh);
 	return NULL;
+#else
+	DH *dh;
+	BIGNUM *p = NULL, *g, *priv_key = NULL, *pub_key = NULL;
+
+	dh = DH_new();
+	if (dh == NULL)
+		return NULL;
+
+	g = BN_new();
+	p = get_group5_prime();
+	if (!g || BN_set_word(g, 2) != 1 || !p ||
+	    DH_set0_pqg(dh, p, NULL, g) != 1)
+		goto err;
+	p = NULL;
+	g = NULL;
+
+	priv_key = BN_bin2bn(wpabuf_head(priv), wpabuf_len(priv), NULL);
+	pub_key = BN_bin2bn(wpabuf_head(publ), wpabuf_len(publ), NULL);
+	if (!priv_key || !pub_key || DH_set0_key(dh, pub_key, priv_key) != 1)
+		goto err;
+	pub_key = NULL;
+	priv_key = NULL;
+
+	if (DH_generate_key(dh) != 1)
+		goto err;
+
+	return dh;
+
+err:
+	BN_free(p);
+	BN_free(g);
+	BN_free(pub_key);
+	BN_clear_free(priv_key);
+	DH_free(dh);
+	return NULL;
+#endif
 }
 
 
@@ -917,7 +1036,7 @@ int hmac_sha384_vector(const u8 *key, size_t key_len, size_t num_elem,
 		       const u8 *addr[], const size_t *len, u8 *mac)
 {
 	return openssl_hmac_vector(EVP_sha384(), key, key_len, num_elem, addr,
-				   len, mac, 32);
+				   len, mac, 48);
 }
 
 
@@ -1244,6 +1363,7 @@ fail:
 
 struct crypto_ec {
 	EC_GROUP *group;
+	int nid;
 	BN_CTX *bnctx;
 	BIGNUM *prime;
 	BIGNUM *order;
@@ -1301,6 +1421,7 @@ struct crypto_ec * crypto_ec_init(int group)
 	if (e == NULL)
 		return NULL;
 
+	e->nid = nid;
 	e->bnctx = BN_CTX_new();
 	e->group = EC_GROUP_new_by_curve_name(nid);
 	e->prime = BN_new();
@@ -1539,6 +1660,241 @@ int crypto_ec_point_cmp(const struct crypto_ec *e,
 {
 	return EC_POINT_cmp(e->group, (const EC_POINT *) a,
 			    (const EC_POINT *) b, e->bnctx);
+}
+
+
+struct crypto_ecdh {
+	struct crypto_ec *ec;
+	EVP_PKEY *pkey;
+};
+
+struct crypto_ecdh * crypto_ecdh_init(int group)
+{
+	struct crypto_ecdh *ecdh;
+	EVP_PKEY *params = NULL;
+	EVP_PKEY_CTX *pctx = NULL;
+	EVP_PKEY_CTX *kctx = NULL;
+
+	ecdh = os_zalloc(sizeof(*ecdh));
+	if (!ecdh)
+		goto fail;
+
+	ecdh->ec = crypto_ec_init(group);
+	if (!ecdh->ec)
+		goto fail;
+
+	pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
+	if (!pctx)
+		goto fail;
+
+	if (EVP_PKEY_paramgen_init(pctx) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_paramgen_init failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(pctx, ecdh->ec->nid) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_CTX_set_ec_paramgen_curve_nid failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	if (EVP_PKEY_paramgen(pctx, &params) != 1) {
+		wpa_printf(MSG_ERROR, "OpenSSL: EVP_PKEY_paramgen failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	kctx = EVP_PKEY_CTX_new(params, NULL);
+	if (!kctx)
+		goto fail;
+
+	if (EVP_PKEY_keygen_init(kctx) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_keygen_init failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	if (EVP_PKEY_keygen(kctx, &ecdh->pkey) != 1) {
+		wpa_printf(MSG_ERROR, "OpenSSL: EVP_PKEY_keygen failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+done:
+	EVP_PKEY_free(params);
+	EVP_PKEY_CTX_free(pctx);
+	EVP_PKEY_CTX_free(kctx);
+
+	return ecdh;
+fail:
+	crypto_ecdh_deinit(ecdh);
+	ecdh = NULL;
+	goto done;
+}
+
+
+struct wpabuf * crypto_ecdh_get_pubkey(struct crypto_ecdh *ecdh, int inc_y)
+{
+	struct wpabuf *buf = NULL;
+	EC_KEY *eckey;
+	const EC_POINT *pubkey;
+	BIGNUM *x, *y = NULL;
+	int len = BN_num_bytes(ecdh->ec->prime);
+	int res;
+
+	eckey = EVP_PKEY_get1_EC_KEY(ecdh->pkey);
+	if (!eckey)
+		return NULL;
+
+	pubkey = EC_KEY_get0_public_key(eckey);
+	if (!pubkey)
+		return NULL;
+
+	x = BN_new();
+	if (inc_y) {
+		y = BN_new();
+		if (!y)
+			goto fail;
+	}
+	buf = wpabuf_alloc(inc_y ? 2 * len : len);
+	if (!x || !buf)
+		goto fail;
+
+	if (EC_POINT_get_affine_coordinates_GFp(ecdh->ec->group, pubkey,
+						x, y, ecdh->ec->bnctx) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EC_POINT_get_affine_coordinates_GFp failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	res = crypto_bignum_to_bin((struct crypto_bignum *) x,
+				   wpabuf_put(buf, len), len, len);
+	if (res < 0)
+		goto fail;
+
+	if (inc_y) {
+		res = crypto_bignum_to_bin((struct crypto_bignum *) y,
+					   wpabuf_put(buf, len), len, len);
+		if (res < 0)
+			goto fail;
+	}
+
+done:
+	BN_clear_free(x);
+	BN_clear_free(y);
+	EC_KEY_free(eckey);
+
+	return buf;
+fail:
+	wpabuf_free(buf);
+	buf = NULL;
+	goto done;
+}
+
+
+struct wpabuf * crypto_ecdh_set_peerkey(struct crypto_ecdh *ecdh, int inc_y,
+					const u8 *key, size_t len)
+{
+	BIGNUM *x, *y = NULL;
+	EVP_PKEY_CTX *ctx = NULL;
+	EVP_PKEY *peerkey = NULL;
+	struct wpabuf *secret = NULL;
+	size_t secret_len;
+	EC_POINT *pub;
+	EC_KEY *eckey = NULL;
+
+	x = BN_bin2bn(key, inc_y ? len / 2 : len, NULL);
+	pub = EC_POINT_new(ecdh->ec->group);
+	if (!x || !pub)
+		goto fail;
+
+	if (inc_y) {
+		y = BN_bin2bn(key + len / 2, len / 2, NULL);
+		if (!y)
+			goto fail;
+		if (!EC_POINT_set_affine_coordinates_GFp(ecdh->ec->group, pub,
+							 x, y,
+							 ecdh->ec->bnctx)) {
+			wpa_printf(MSG_ERROR,
+				   "OpenSSL: EC_POINT_set_affine_coordinates_GFp failed: %s",
+				   ERR_error_string(ERR_get_error(), NULL));
+			goto fail;
+		}
+	} else if (!EC_POINT_set_compressed_coordinates_GFp(ecdh->ec->group,
+							    pub, x, 0,
+							    ecdh->ec->bnctx)) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EC_POINT_set_compressed_coordinates_GFp failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	if (!EC_POINT_is_on_curve(ecdh->ec->group, pub, ecdh->ec->bnctx)) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: ECDH peer public key is not on curve");
+		goto fail;
+	}
+
+	eckey = EC_KEY_new_by_curve_name(ecdh->ec->nid);
+	if (!eckey || EC_KEY_set_public_key(eckey, pub) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EC_KEY_set_public_key failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	peerkey = EVP_PKEY_new();
+	if (!peerkey || EVP_PKEY_set1_EC_KEY(peerkey, eckey) != 1)
+		goto fail;
+
+	ctx = EVP_PKEY_CTX_new(ecdh->pkey, NULL);
+	if (!ctx || EVP_PKEY_derive_init(ctx) != 1 ||
+	    EVP_PKEY_derive_set_peer(ctx, peerkey) != 1 ||
+	    EVP_PKEY_derive(ctx, NULL, &secret_len) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_derive(1) failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	secret = wpabuf_alloc(secret_len);
+	if (!secret)
+		goto fail;
+	if (EVP_PKEY_derive(ctx, wpabuf_put(secret, secret_len),
+			    &secret_len) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_derive(2) failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+done:
+	BN_free(x);
+	BN_free(y);
+	EC_KEY_free(eckey);
+	EC_POINT_free(pub);
+	EVP_PKEY_CTX_free(ctx);
+	EVP_PKEY_free(peerkey);
+	return secret;
+fail:
+	wpabuf_free(secret);
+	secret = NULL;
+	goto done;
+}
+
+
+void crypto_ecdh_deinit(struct crypto_ecdh *ecdh)
+{
+	if (ecdh) {
+		crypto_ec_deinit(ecdh->ec);
+		EVP_PKEY_free(ecdh->pkey);
+		os_free(ecdh);
+	}
 }
 
 #endif /* CONFIG_ECC */

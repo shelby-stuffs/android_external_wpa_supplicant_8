@@ -1040,7 +1040,8 @@ struct wpa_config {
 	 *
 	 * By default, PMF is disabled unless enabled by the per-network
 	 * ieee80211w=1 or ieee80211w=2 parameter. pmf=1/2 can be used to change
-	 * this default behavior.
+	 * this default behavior for RSN network (this is not applicable for
+	 * non-RSN cases).
 	 */
 	enum mfp_options pmf;
 
@@ -1317,6 +1318,47 @@ struct wpa_config {
 	 *	sent to not-associated AP; if associated, AP BSSID)
 	 */
 	int gas_address3;
+
+	/**
+	 * ftm_responder - Publish FTM (fine timing measurement)
+	 * responder functionality
+	 *
+	 * Values:
+	 * 0 - do not publish FTM responder functionality (Default)
+	 * 1 - publish FTM responder functionality in
+	 *	bit 70 of Extended Capabilities element
+	 * Note, actual FTM responder operation is managed outside
+	 * wpa_supplicant.
+	 */
+	int ftm_responder;
+
+	/**
+	 * ftm_initiator - Publish FTM (fine timing measurement)
+	 * initiator functionality
+	 *
+	 * Values:
+	 * 0 - do not publish FTM initiator functionality (Default)
+	 * 1 - publish FTM initiator functionality in
+	 *	bit 71 of Extended Capabilities element
+	 * Note, actual FTM initiator operation is managed outside
+	 * wpa_supplicant.
+	 */
+	int ftm_initiator;
+
+	/**
+	 * gas_rand_addr_lifetime - Lifetime of random MAC address for ANQP in
+	 *	seconds
+	 */
+	unsigned int gas_rand_addr_lifetime;
+
+	/**
+	 * gas_rand_mac_addr - GAS MAC address policy
+	 *
+	 * 0 = use permanent MAC address
+	 * 1 = use random MAC address
+	 * 2 = like 1, but maintain OUI (with local admin bit set)
+	 */
+	int gas_rand_mac_addr;
 };
 
 

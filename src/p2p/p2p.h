@@ -2266,6 +2266,7 @@ int p2p_set_wfd_ie_prov_disc_req(struct p2p_data *p2p, struct wpabuf *ie);
 int p2p_set_wfd_ie_prov_disc_resp(struct p2p_data *p2p, struct wpabuf *ie);
 int p2p_set_wfd_ie_go_neg(struct p2p_data *p2p, struct wpabuf *ie);
 int p2p_set_wfd_dev_info(struct p2p_data *p2p, const struct wpabuf *elem);
+int p2p_set_wfd_r2_dev_info(struct p2p_data *p2p, const struct wpabuf *elem);
 int p2p_set_wfd_assoc_bssid(struct p2p_data *p2p, const struct wpabuf *elem);
 int p2p_set_wfd_coupled_sink_info(struct p2p_data *p2p,
 				  const struct wpabuf *elem);
@@ -2285,7 +2286,7 @@ struct wpabuf * wifi_display_encaps(struct wpabuf *subelems);
  * discovery (p2p_find). A random number of 100 TU units is picked for each
  * Listen state iteration from [min_disc_int,max_disc_int] range.
  *
- * max_disc_tu can be used to futher limit the discoverable duration. However,
+ * max_disc_tu can be used to further limit the discoverable duration. However,
  * it should be noted that use of this parameter is not recommended since it
  * would not be compliant with the P2P specification.
  */
@@ -2373,6 +2374,8 @@ void p2p_expire_peers(struct p2p_data *p2p);
 void p2p_set_own_pref_freq_list(struct p2p_data *p2p,
 				const unsigned int *pref_freq_list,
 				unsigned int size);
+void p2p_set_override_pref_op_chan(struct p2p_data *p2p, u8 op_class,
+				   u8 chan);
 
 /**
  * p2p_group_get_common_freqs - Get the group common frequencies
@@ -2386,4 +2389,5 @@ int p2p_group_get_common_freqs(struct p2p_group *group, int *common_freqs,
 
 struct wpabuf * p2p_build_probe_resp_template(struct p2p_data *p2p,
 					      unsigned int freq);
+
 #endif /* P2P_H */
