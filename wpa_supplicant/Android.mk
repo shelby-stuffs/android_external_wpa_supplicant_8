@@ -51,9 +51,6 @@ endif
 
 # C++ flags for binder interface
 L_CPPFLAGS := -std=c++11 -Wall -Werror
-# TODO: Remove these allowed warnings later.
-L_CPPFLAGS += -Wno-unused-variable -Wno-unused-parameter
-L_CPPFLAGS += -Wno-unused-private-field
 
 INCLUDES = $(LOCAL_PATH)
 INCLUDES += $(LOCAL_PATH)/src
