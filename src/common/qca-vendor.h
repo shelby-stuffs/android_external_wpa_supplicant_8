@@ -18,6 +18,8 @@
 
 #define OUI_QCA 0x001374
 
+#define QCA_NL80211_VENDOR_SUBMCD_STATS_EXT QCA_NL80211_VENDOR_SUBCMD_STATS_EXT
+
 /**
  * enum qca_radiotap_vendor_ids - QCA radiotap vendor namespace IDs
  */
