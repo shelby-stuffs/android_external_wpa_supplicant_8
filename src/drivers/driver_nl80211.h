@@ -78,6 +78,7 @@ struct i802_bss {
 
 	struct nl80211_wiphy_data *wiphy_data;
 	struct dl_list wiphy_list;
+	u8 rand_addr[ETH_ALEN];
 };
 
 struct wpa_driver_nl80211_data {
@@ -232,6 +233,7 @@ int nl80211_create_iface(struct wpa_driver_nl80211_data *drv,
 			 void *arg, int use_existing);
 void nl80211_remove_iface(struct wpa_driver_nl80211_data *drv, int ifidx);
 unsigned int nl80211_get_assoc_freq(struct wpa_driver_nl80211_data *drv);
+int nl80211_get_assoc_ssid(struct wpa_driver_nl80211_data *drv, u8 *ssid);
 enum chan_width convert2width(int width);
 void nl80211_mark_disconnected(struct wpa_driver_nl80211_data *drv);
 struct i802_bss * get_bss_ifindex(struct wpa_driver_nl80211_data *drv,
@@ -286,15 +288,6 @@ int wpa_driver_set_ap_wps_p2p_ie(void *priv, const struct wpabuf *beacon,
 
 /* driver_nl80211_scan.c */
 
-struct nl80211_bss_info_arg {
-	struct wpa_driver_nl80211_data *drv;
-	struct wpa_scan_results *res;
-	unsigned int assoc_freq;
-	unsigned int ibss_freq;
-	u8 assoc_bssid[ETH_ALEN];
-};
-
-int bss_info_handler(struct nl_msg *msg, void *arg);
 void wpa_driver_nl80211_scan_timeout(void *eloop_ctx, void *timeout_ctx);
 int wpa_driver_nl80211_scan(struct i802_bss *bss,
 			    struct wpa_driver_scan_params *params);

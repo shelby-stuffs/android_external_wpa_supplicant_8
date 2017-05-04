@@ -1,6 +1,6 @@
 /*
  * wpa_supplicant/hostapd control interface library
- * Copyright (c) 2004-2006, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2017, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -74,8 +74,12 @@ extern "C" {
 #define WPA_EVENT_NETWORK_NOT_FOUND "CTRL-EVENT-NETWORK-NOT-FOUND "
 /** Change in the signal level was reported by the driver */
 #define WPA_EVENT_SIGNAL_CHANGE "CTRL-EVENT-SIGNAL-CHANGE "
+/** Beacon loss reported by the driver */
+#define WPA_EVENT_BEACON_LOSS "CTRL-EVENT-BEACON-LOSS "
 /** Regulatory domain channel */
 #define WPA_EVENT_REGDOM_CHANGE "CTRL-EVENT-REGDOM-CHANGE "
+/** Channel switch (followed by freq=<MHz> and other channel parameters) */
+#define WPA_EVENT_CHANNEL_SWITCH "CTRL-EVENT-CHANNEL-SWITCH "
 
 /** IP subnet status change notification
  *
@@ -226,6 +230,12 @@ extern "C" {
 /* parameters: <addr> <result> */
 #define ANQP_QUERY_DONE "ANQP-QUERY-DONE "
 
+#define RX_ANQP "RX-ANQP "
+#define RX_HS20_ANQP "RX-HS20-ANQP "
+#define RX_HS20_ANQP_ICON "RX-HS20-ANQP-ICON "
+#define RX_HS20_ICON "RX-HS20-ICON "
+#define RX_MBO_ANQP "RX-MBO-ANQP "
+
 #define HS20_SUBSCRIPTION_REMEDIATION "HS20-SUBSCRIPTION-REMEDIATION "
 #define HS20_DEAUTH_IMMINENT_NOTICE "HS20-DEAUTH-IMMINENT-NOTICE "
 
@@ -246,6 +256,7 @@ extern "C" {
 #define AP_STA_CONNECTED "AP-STA-CONNECTED "
 #define AP_STA_DISCONNECTED "AP-STA-DISCONNECTED "
 #define AP_STA_POSSIBLE_PSK_MISMATCH "AP-STA-POSSIBLE-PSK-MISMATCH "
+#define AP_STA_POLL_OK "AP-STA-POLL-OK "
 
 #define AP_REJECTED_MAX_STA "AP-REJECTED-MAX-STA "
 #define AP_REJECTED_BLOCKED_STA "AP-REJECTED-BLOCKED-STA "
@@ -265,6 +276,7 @@ extern "C" {
 #define DFS_EVENT_CAC_START "DFS-CAC-START "
 #define DFS_EVENT_CAC_COMPLETED "DFS-CAC-COMPLETED "
 #define DFS_EVENT_NOP_FINISHED "DFS-NOP-FINISHED "
+#define DFS_EVENT_PRE_CAC_EXPIRED "DFS-PRE-CAC-EXPIRED "
 
 #define AP_CSA_FINISHED "AP-CSA-FINISHED "
 
@@ -279,6 +291,20 @@ extern "C" {
 
 /* BSS Transition Management Request received with MBO transition reason */
 #define MBO_TRANSITION_REASON "MBO-TRANSITION-REASON "
+
+/* parameters: <STA address> <dialog token> <ack=0/1> */
+#define BEACON_REQ_TX_STATUS "BEACON-REQ-TX-STATUS "
+/* parameters: <STA address> <dialog token> <report mode> <beacon report> */
+#define BEACON_RESP_RX "BEACON-RESP-RX "
+
+/* PMKSA cache entry added; parameters: <BSSID> <network_id> */
+#define PMKSA_CACHE_ADDED "PMKSA-CACHE-ADDED "
+/* PMKSA cache entry removed; parameters: <BSSID> <network_id> */
+#define PMKSA_CACHE_REMOVED "PMKSA-CACHE-REMOVED "
+
+/* FILS HLP Container receive; parameters: dst=<addr> src=<addr> frame=<hexdump>
+ */
+#define FILS_HLP_RX "FILS-HLP-RX "
 
 /* BSS command information masks */
 
@@ -305,6 +331,9 @@ extern "C" {
 #define WPA_BSS_MASK_SNR		BIT(19)
 #define WPA_BSS_MASK_EST_THROUGHPUT	BIT(20)
 #define WPA_BSS_MASK_FST		BIT(21)
+#define WPA_BSS_MASK_UPDATE_IDX		BIT(22)
+#define WPA_BSS_MASK_BEACON_IE		BIT(23)
+#define WPA_BSS_MASK_FILS_INDICATION	BIT(24)
 
 
 /* VENDOR_ELEM_* frame id values */
@@ -323,6 +352,7 @@ enum wpa_vendor_elem_frame {
 	VENDOR_ELEM_P2P_ASSOC_REQ = 11,
 	VENDOR_ELEM_P2P_ASSOC_RESP = 12,
 	VENDOR_ELEM_ASSOC_REQ = 13,
+	VENDOR_ELEM_PROBE_REQ = 14,
 	NUM_VENDOR_ELEM_FRAMES
 };
 

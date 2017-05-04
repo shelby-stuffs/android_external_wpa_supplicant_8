@@ -7,5 +7,5 @@ ifneq ($(filter VER_0_8_X VER_2_1_DEVEL,$(WPA_SUPPLICANT_VERSION)),)
 # set up in the other Android.mk.
 include $(LOCAL_PATH)/hostapd/Android.mk \
         $(LOCAL_PATH)/wpa_supplicant/Android.mk \
-	$(LOCAL_PATH)/hs20/client/Android.mk
+        $(LOCAL_PATH)/hs20/client/Android.mk
 endif

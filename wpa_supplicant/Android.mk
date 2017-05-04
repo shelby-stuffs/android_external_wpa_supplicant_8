@@ -49,6 +49,9 @@ ifeq ($(TARGET_ARCH),arm)
 L_CFLAGS += -mabi=aapcs-linux
 endif
 
+# C++ flags for binder interface
+L_CPPFLAGS := -std=c++11 -Wall -Werror
+
 INCLUDES = $(LOCAL_PATH)
 INCLUDES += $(LOCAL_PATH)/src
 INCLUDES += $(LOCAL_PATH)/src/common
@@ -86,8 +89,10 @@ OBJS += eap_register.c
 OBJS += src/utils/common.c
 OBJS += src/utils/wpa_debug.c
 OBJS += src/utils/wpabuf.c
+OBJS += src/utils/bitfield.c
 OBJS += wmm_ac.c
 OBJS += op_classes.c
+OBJS += rrm.c
 OBJS_p = wpa_passphrase.c
 OBJS_p += src/utils/common.c
 OBJS_p += src/utils/wpa_debug.c
@@ -95,6 +100,7 @@ OBJS_p += src/utils/wpabuf.c
 OBJS_c = wpa_cli.c src/common/wpa_ctrl.c
 OBJS_c += src/utils/wpa_debug.c
 OBJS_c += src/utils/common.c
+OBJS_c += src/common/cli.c
 OBJS_d =
 OBJS_priv =
 
@@ -204,6 +210,10 @@ NEED_SHA256=y
 NEED_AES_OMAC1=y
 endif
 
+ifdef CONFIG_IEEE80211R_AP
+CONFIG_IEEE80211R=y
+endif
+
 ifdef CONFIG_IEEE80211R
 L_CFLAGS += -DCONFIG_IEEE80211R
 OBJS += src/rsn_supp/wpa_ft.c
@@ -215,8 +225,6 @@ ifdef CONFIG_MESH
 NEED_80211_COMMON=y
 NEED_SHA256=y
 NEED_AES_SIV=y
-NEED_AES_OMAC1=y
-NEED_AES_CTR=y
 CONFIG_SAE=y
 CONFIG_AP=y
 L_CFLAGS += -DCONFIG_MESH
@@ -230,6 +238,22 @@ L_CFLAGS += -DCONFIG_SAE
 OBJS += src/common/sae.c
 NEED_ECC=y
 NEED_DH_GROUPS=y
+endif
+
+ifdef CONFIG_OWE
+L_CFLAGS += -DCONFIG_OWE
+NEED_ECC=y
+NEED_HMAC_SHA256_KDF=y
+endif
+
+ifdef CONFIG_FILS
+L_CFLAGS += -DCONFIG_FILS
+NEED_SHA384=y
+NEED_AES_SIV=y
+ifdef CONFIG_FILS_SK_PFS
+L_CFLAGS += -DCONFIG_FILS_SK_PFS
+NEED_ECC=y
+endif
 endif
 
 ifdef CONFIG_WNM
@@ -250,6 +274,10 @@ endif
 
 ifdef CONFIG_PEERKEY
 L_CFLAGS += -DCONFIG_PEERKEY
+endif
+
+ifdef CONFIG_PMKSA_CACHE_EXTERNAL
+L_CFLAGS += -DCONFIG_PMKSA_CACHE_EXTERNAL
 endif
 
 ifndef CONFIG_NO_WPA
@@ -288,7 +316,6 @@ OBJS += src/p2p/p2p_invitation.c
 OBJS += src/p2p/p2p_dev_disc.c
 OBJS += src/p2p/p2p_group.c
 OBJS += src/ap/p2p_hostapd.c
-OBJS += src/utils/bitfield.c
 L_CFLAGS += -DCONFIG_P2P
 NEED_GAS=y
 NEED_OFFCHANNEL=y
@@ -798,6 +825,8 @@ OBJS += src/ap/ap_drv_ops.c
 OBJS += src/ap/beacon.c
 OBJS += src/ap/bss_load.c
 OBJS += src/ap/eap_user_db.c
+OBJS += src/ap/neighbor_db.c
+OBJS += src/ap/rrm.c
 ifdef CONFIG_IEEE80211N
 OBJS += src/ap/ieee802_11_ht.c
 ifdef CONFIG_IEEE80211AC
@@ -812,6 +841,9 @@ OBJS += src/ap/wnm_ap.c
 endif
 ifdef CONFIG_MBO
 OBJS += src/ap/mbo_ap.c
+endif
+ifdef CONFIG_FILS
+OBJS += src/ap/fils_hlp.c
 endif
 ifdef CONFIG_CTRL_IFACE
 OBJS += src/ap/ctrl_iface_ap.c
@@ -830,11 +862,6 @@ endif
 ifdef CONFIG_IEEE80211AX
 L_CFLAGS += -DCONFIG_IEEE80211AX
 endif
-endif
-
-ifdef CONFIG_MBO
-OBJS += mbo.c
-L_CFLAGS += -DCONFIG_MBO
 endif
 
 ifdef NEED_AP_MLME
@@ -858,13 +885,19 @@ OBJS += src/ap/hs20.c
 endif
 endif
 
+ifdef CONFIG_MBO
+OBJS += mbo.c
+L_CFLAGS += -DCONFIG_MBO
+endif
+
 ifdef NEED_RSN_AUTHENTICATOR
 L_CFLAGS += -DCONFIG_NO_RADIUS
 NEED_AES_WRAP=y
 OBJS += src/ap/wpa_auth.c
 OBJS += src/ap/wpa_auth_ie.c
 OBJS += src/ap/pmksa_cache_auth.c
-ifdef CONFIG_IEEE80211R
+ifdef CONFIG_IEEE80211R_AP
+L_CFLAGS += -DCONFIG_IEEE80211R_AP
 OBJS += src/ap/wpa_auth_ft.c
 endif
 ifdef CONFIG_PEERKEY
@@ -1129,6 +1162,12 @@ endif
 ifdef NEED_AES_EAX
 AESOBJS += src/crypto/aes-eax.c
 NEED_AES_CTR=y
+NEED_AES_OMAC1=y
+endif
+ifdef NEED_AES_SIV
+AESOBJS += src/crypto/aes-siv.c
+NEED_AES_CTR=y
+NEED_AES_OMAC1=y
 endif
 ifdef NEED_AES_CTR
 AESOBJS += src/crypto/aes-ctr.c
@@ -1160,9 +1199,6 @@ ifdef NEED_AES_ENC
 ifdef CONFIG_INTERNAL_AES
 AESOBJS += src/crypto/aes-internal-enc.c
 endif
-endif
-ifdef NEED_AES_SIV
-AESOBJS += src/crypto/aes-siv.c
 endif
 ifdef NEED_AES
 OBJS += $(AESOBJS)
@@ -1263,6 +1299,9 @@ OBJS += $(SHA256OBJS)
 endif
 ifdef NEED_SHA384
 L_CFLAGS += -DCONFIG_SHA384
+ifneq ($(CONFIG_TLS), openssl)
+OBJS += src/crypto/sha384.c
+endif
 OBJS += src/crypto/sha384-prf.c
 endif
 
@@ -1354,13 +1393,8 @@ OBJS += $(DBUS_OBJS)
 L_CFLAGS += $(DBUS_CFLAGS)
 
 ifdef CONFIG_CTRL_IFACE_BINDER
-BINDER=y
+WPA_SUPPLICANT_USE_BINDER=y
 L_CFLAGS += -DCONFIG_BINDER -DCONFIG_CTRL_IFACE_BINDER
-OBJS += binder/binder.cpp binder/binder_manager.cpp
-OBJS += binder/supplicant.cpp binder/iface.cpp
-OBJS += binder/fi/w1/wpa_supplicant/ISupplicant.aidl
-OBJS += binder/fi/w1/wpa_supplicant/ISupplicantCallbacks.aidl
-OBJS += binder/fi/w1/wpa_supplicant/IIface.aidl
 endif
 
 ifdef CONFIG_READLINE
@@ -1583,9 +1617,7 @@ endif
 
 # With BoringSSL we need libkeystore-engine in order to provide access to
 # keystore keys.
-ifneq (,$(wildcard external/boringssl/flavor.mk))
 LOCAL_SHARED_LIBRARIES += libkeystore-engine
-endif
 
 ifdef CONFIG_DRIVER_NL80211
 ifneq ($(wildcard external/libnl),)
@@ -1600,9 +1632,9 @@ LOCAL_C_INCLUDES := $(INCLUDES)
 ifeq ($(DBUS), y)
 LOCAL_SHARED_LIBRARIES += libdbus
 endif
-ifeq ($(BINDER), y)
-LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/binder frameworks/native/aidl/binder
-LOCAL_SHARED_LIBRARIES += libutils libbinder
+ifeq ($(WPA_SUPPLICANT_USE_BINDER), y)
+LOCAL_SHARED_LIBRARIES += libbinder libutils
+LOCAL_STATIC_LIBRARIES += libwpa_binder libwpa_binder_interface
 endif
 include $(BUILD_EXECUTABLE)
 
@@ -1642,3 +1674,42 @@ LOCAL_COPY_HEADERS_TO := libwpa_client
 LOCAL_COPY_HEADERS := src/common/wpa_ctrl.h
 LOCAL_COPY_HEADERS += src/common/qca-vendor.h
 include $(BUILD_SHARED_LIBRARY)
+
+ifeq ($(WPA_SUPPLICANT_USE_BINDER), y)
+### Binder interface library ###
+########################
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := libwpa_binder_interface
+LOCAL_AIDL_INCLUDES := \
+    $(LOCAL_PATH)/binder \
+    frameworks/native/aidl/binder
+LOCAL_EXPORT_C_INCLUDE_DIRS := \
+    $(LOCAL_PATH)/binder
+LOCAL_CPPFLAGS := $(L_CPPFLAGS)
+LOCAL_SRC_FILES := \
+    binder/binder_constants.cpp \
+    binder/fi/w1/wpa_supplicant/ISupplicant.aidl \
+    binder/fi/w1/wpa_supplicant/ISupplicantCallbacks.aidl \
+    binder/fi/w1/wpa_supplicant/IIface.aidl
+LOCAL_SHARED_LIBRARIES := libbinder
+include $(BUILD_STATIC_LIBRARY)
+
+### Binder service library ###
+########################
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := libwpa_binder
+LOCAL_CPPFLAGS := $(L_CPPFLAGS)
+LOCAL_CFLAGS := $(L_CFLAGS)
+LOCAL_C_INCLUDES := $(INCLUDES)
+LOCAL_SRC_FILES := \
+    binder/binder.cpp binder/binder_manager.cpp \
+    binder/supplicant.cpp binder/iface.cpp
+LOCAL_SHARED_LIBRARIES := \
+    libbinder \
+    libutils
+LOCAL_STATIC_LIBRARIES := libwpa_binder_interface
+include $(BUILD_STATIC_LIBRARY)
+
+endif # BINDER == y

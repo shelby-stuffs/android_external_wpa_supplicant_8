@@ -1027,10 +1027,9 @@ static struct wpa_ssid * wpas_wps_add_network(struct wpa_supplicant *wpa_s,
 				continue;
 
 			os_free(ssid->ssid);
-			ssid->ssid = os_malloc(bss->ssid_len);
+			ssid->ssid = os_memdup(bss->ssid, bss->ssid_len);
 			if (ssid->ssid == NULL)
 				break;
-			os_memcpy(ssid->ssid, bss->ssid, bss->ssid_len);
 			ssid->ssid_len = bss->ssid_len;
 			wpa_hexdump_ascii(MSG_DEBUG, "WPS: Picked SSID from "
 					  "scan results",
@@ -1169,6 +1168,7 @@ int wpas_wps_start_pbc(struct wpa_supplicant *wpa_s, const u8 *bssid,
 		return -1;
 	if (wpa_s->wps_fragment_size)
 		ssid->eap.fragment_size = wpa_s->wps_fragment_size;
+	wpa_supplicant_wps_event(wpa_s, WPS_EV_PBC_ACTIVE, NULL);
 	eloop_register_timeout(WPS_PBC_WALK_TIME, 0, wpas_wps_timeout,
 			       wpa_s, NULL);
 	wpas_wps_reassoc(wpa_s, ssid, bssid, 0);

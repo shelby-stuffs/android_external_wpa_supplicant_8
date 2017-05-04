@@ -371,9 +371,8 @@ nak:
 
 #ifdef CONFIG_ERP
 
-static char * eap_home_realm(struct eap_sm *sm)
+static char * eap_get_realm(struct eap_sm *sm, struct eap_peer_config *config)
 {
-	struct eap_peer_config *config = eap_get_config(sm);
 	char *realm;
 	size_t i, realm_len;
 
@@ -414,6 +413,12 @@ static char * eap_home_realm(struct eap_sm *sm)
 	}
 
 	return os_strdup("");
+}
+
+
+static char * eap_home_realm(struct eap_sm *sm)
+{
+	return eap_get_realm(sm, eap_get_config(sm));
 }
 
 
@@ -469,6 +474,84 @@ static void eap_erp_remove_keys_realm(struct eap_sm *sm, const char *realm)
 	}
 }
 
+
+int eap_peer_update_erp_next_seq_num(struct eap_sm *sm, u16 next_seq_num)
+{
+	struct eap_erp_key *erp;
+	char *home_realm;
+
+	home_realm = eap_home_realm(sm);
+	if (!home_realm || os_strlen(home_realm) == 0) {
+		os_free(home_realm);
+		return -1;
+	}
+
+	erp = eap_erp_get_key(sm, home_realm);
+	if (!erp) {
+		wpa_printf(MSG_DEBUG,
+			   "EAP: Failed to find ERP key for realm: %s",
+			   home_realm);
+		os_free(home_realm);
+		return -1;
+	}
+
+	if ((u32) next_seq_num < erp->next_seq) {
+		/* Sequence number has wrapped around, clear this ERP
+		 * info and do a full auth next time.
+		 */
+		eap_peer_erp_free_key(erp);
+	} else {
+		erp->next_seq = (u32) next_seq_num;
+	}
+
+	os_free(home_realm);
+	return 0;
+}
+
+
+int eap_peer_get_erp_info(struct eap_sm *sm, struct eap_peer_config *config,
+			  const u8 **username, size_t *username_len,
+			  const u8 **realm, size_t *realm_len,
+			  u16 *erp_next_seq_num, const u8 **rrk,
+			  size_t *rrk_len)
+{
+	struct eap_erp_key *erp;
+	char *home_realm;
+	char *pos;
+
+	home_realm = eap_get_realm(sm, config);
+	if (!home_realm || os_strlen(home_realm) == 0) {
+		os_free(home_realm);
+		return -1;
+	}
+
+	erp = eap_erp_get_key(sm, home_realm);
+	os_free(home_realm);
+	if (!erp)
+		return -1;
+
+	if (erp->next_seq >= 65536)
+		return -1; /* SEQ has range of 0..65535 */
+
+	pos = os_strchr(erp->keyname_nai, '@');
+	*username_len = pos - erp->keyname_nai;
+	*username = (u8 *) erp->keyname_nai;
+
+	pos++;
+	*realm_len = os_strlen(pos);
+	*realm = (u8 *) pos;
+
+	*erp_next_seq_num = (u16) erp->next_seq;
+
+	*rrk_len = erp->rRK_len;
+	*rrk = erp->rRK;
+
+	if (*username_len == 0 || *realm_len == 0 || *rrk_len == 0)
+		return -1;
+
+	return 0;
+}
+
 #endif /* CONFIG_ERP */
 
 
@@ -489,7 +572,7 @@ static void eap_peer_erp_init(struct eap_sm *sm)
 	u8 *emsk = NULL;
 	size_t emsk_len = 0;
 	u8 EMSKname[EAP_EMSK_NAME_LEN];
-	u8 len[2];
+	u8 len[2], ctx[3];
 	char *realm;
 	size_t realm_len, nai_buf_len;
 	struct eap_erp_key *erp = NULL;
@@ -526,7 +609,7 @@ static void eap_peer_erp_init(struct eap_sm *sm)
 
 	wpa_hexdump_key(MSG_DEBUG, "EAP: EMSK", emsk, emsk_len);
 
-	WPA_PUT_BE16(len, 8);
+	WPA_PUT_BE16(len, EAP_EMSK_NAME_LEN);
 	if (hmac_sha256_kdf(sm->eapSessionId, sm->eapSessionIdLen, "EMSK",
 			    len, sizeof(len),
 			    EMSKname, EAP_EMSK_NAME_LEN) < 0) {
@@ -550,9 +633,11 @@ static void eap_peer_erp_init(struct eap_sm *sm)
 	erp->rRK_len = emsk_len;
 	wpa_hexdump_key(MSG_DEBUG, "EAP: ERP rRK", erp->rRK, erp->rRK_len);
 
+	ctx[0] = EAP_ERP_CS_HMAC_SHA256_128;
+	WPA_PUT_BE16(&ctx[1], erp->rRK_len);
 	if (hmac_sha256_kdf(erp->rRK, erp->rRK_len,
-			    "EAP Re-authentication Integrity Key@ietf.org",
-			    len, sizeof(len), erp->rIK, erp->rRK_len) < 0) {
+			    "Re-authentication Integrity Key@ietf.org",
+			    ctx, sizeof(ctx), erp->rIK, erp->rRK_len) < 0) {
 		wpa_printf(MSG_DEBUG, "EAP: Could not derive rIK for ERP");
 		goto fail;
 	}
@@ -571,8 +656,7 @@ fail:
 
 
 #ifdef CONFIG_ERP
-static int eap_peer_erp_reauth_start(struct eap_sm *sm,
-				     const struct eap_hdr *hdr, size_t len)
+struct wpabuf * eap_peer_build_erp_reauth_start(struct eap_sm *sm, u8 eap_id)
 {
 	char *realm;
 	struct eap_erp_key *erp;
@@ -581,16 +665,16 @@ static int eap_peer_erp_reauth_start(struct eap_sm *sm,
 
 	realm = eap_home_realm(sm);
 	if (!realm)
-		return -1;
+		return NULL;
 
 	erp = eap_erp_get_key(sm, realm);
 	os_free(realm);
 	realm = NULL;
 	if (!erp)
-		return -1;
+		return NULL;
 
 	if (erp->next_seq >= 65536)
-		return -1; /* SEQ has range of 0..65535 */
+		return NULL; /* SEQ has range of 0..65535 */
 
 	/* TODO: check rRK lifetime expiration */
 
@@ -599,9 +683,9 @@ static int eap_peer_erp_reauth_start(struct eap_sm *sm,
 
 	msg = eap_msg_alloc(EAP_VENDOR_IETF, (EapType) EAP_ERP_TYPE_REAUTH,
 			    1 + 2 + 2 + os_strlen(erp->keyname_nai) + 1 + 16,
-			    EAP_CODE_INITIATE, hdr->identifier);
+			    EAP_CODE_INITIATE, eap_id);
 	if (msg == NULL)
-		return -1;
+		return NULL;
 
 	wpabuf_put_u8(msg, 0x20); /* Flags: R=0 B=0 L=1 */
 	wpabuf_put_be16(msg, erp->next_seq);
@@ -615,13 +699,28 @@ static int eap_peer_erp_reauth_start(struct eap_sm *sm,
 	if (hmac_sha256(erp->rIK, erp->rIK_len,
 			wpabuf_head(msg), wpabuf_len(msg), hash) < 0) {
 		wpabuf_free(msg);
-		return -1;
+		return NULL;
 	}
 	wpabuf_put_data(msg, hash, 16);
 
-	wpa_printf(MSG_DEBUG, "EAP: Sending EAP-Initiate/Re-auth");
 	sm->erp_seq = erp->next_seq;
 	erp->next_seq++;
+
+	wpa_hexdump_buf(MSG_DEBUG, "ERP: EAP-Initiate/Re-auth", msg);
+
+	return msg;
+}
+
+
+static int eap_peer_erp_reauth_start(struct eap_sm *sm, u8 eap_id)
+{
+	struct wpabuf *msg;
+
+	msg = eap_peer_build_erp_reauth_start(sm, eap_id);
+	if (!msg)
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "EAP: Sending EAP-Initiate/Re-auth");
 	wpabuf_free(sm->eapRespData);
 	sm->eapRespData = msg;
 	sm->reauthInit = TRUE;
@@ -1566,7 +1665,7 @@ static void eap_peer_initiate(struct eap_sm *sm, const struct eap_hdr *hdr,
 		/* TODO: Derivation of domain specific keys for local ER */
 	}
 
-	if (eap_peer_erp_reauth_start(sm, hdr, len) == 0)
+	if (eap_peer_erp_reauth_start(sm, hdr->identifier) == 0)
 		return;
 
 invalid:
@@ -1577,8 +1676,7 @@ invalid:
 }
 
 
-static void eap_peer_finish(struct eap_sm *sm, const struct eap_hdr *hdr,
-			    size_t len)
+void eap_peer_finish(struct eap_sm *sm, const struct eap_hdr *hdr, size_t len)
 {
 #ifdef CONFIG_ERP
 	const u8 *pos = (const u8 *) (hdr + 1);
@@ -2231,6 +2329,7 @@ static void eap_sm_request(struct eap_sm *sm, enum wpa_ctrl_req_type field,
 		config->pending_req_passphrase++;
 		break;
 	case WPA_CTRL_REQ_SIM:
+		config->pending_req_sim++;
 		txt = msg;
 		break;
 	case WPA_CTRL_REQ_EXT_CERT_CHECK:

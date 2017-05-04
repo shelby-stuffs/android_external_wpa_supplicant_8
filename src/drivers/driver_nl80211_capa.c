@@ -12,8 +12,8 @@
 #include <netlink/genl/genl.h>
 
 #include "utils/common.h"
-#include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
+#include "common/wpa_common.h"
 #include "common/qca-vendor.h"
 #include "common/qca-vendor-attr.h"
 #include "driver_nl80211.h"
@@ -266,40 +266,40 @@ static void wiphy_info_cipher_suites(struct wiphy_info_data *info,
 			   c >> 24, (c >> 16) & 0xff,
 			   (c >> 8) & 0xff, c & 0xff);
 		switch (c) {
-		case WLAN_CIPHER_SUITE_CCMP_256:
+		case RSN_CIPHER_SUITE_CCMP_256:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_CCMP_256;
 			break;
-		case WLAN_CIPHER_SUITE_GCMP_256:
+		case RSN_CIPHER_SUITE_GCMP_256:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_GCMP_256;
 			break;
-		case WLAN_CIPHER_SUITE_CCMP:
+		case RSN_CIPHER_SUITE_CCMP:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_CCMP;
 			break;
-		case WLAN_CIPHER_SUITE_GCMP:
+		case RSN_CIPHER_SUITE_GCMP:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_GCMP;
 			break;
-		case WLAN_CIPHER_SUITE_TKIP:
+		case RSN_CIPHER_SUITE_TKIP:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_TKIP;
 			break;
-		case WLAN_CIPHER_SUITE_WEP104:
+		case RSN_CIPHER_SUITE_WEP104:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_WEP104;
 			break;
-		case WLAN_CIPHER_SUITE_WEP40:
+		case RSN_CIPHER_SUITE_WEP40:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_WEP40;
 			break;
-		case WLAN_CIPHER_SUITE_AES_CMAC:
+		case RSN_CIPHER_SUITE_AES_128_CMAC:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_BIP;
 			break;
-		case WLAN_CIPHER_SUITE_BIP_GMAC_128:
+		case RSN_CIPHER_SUITE_BIP_GMAC_128:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_BIP_GMAC_128;
 			break;
-		case WLAN_CIPHER_SUITE_BIP_GMAC_256:
+		case RSN_CIPHER_SUITE_BIP_GMAC_256:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_BIP_GMAC_256;
 			break;
-		case WLAN_CIPHER_SUITE_BIP_CMAC_256:
+		case RSN_CIPHER_SUITE_BIP_CMAC_256:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_BIP_CMAC_256;
 			break;
-		case WLAN_CIPHER_SUITE_NO_GROUP_ADDR:
+		case RSN_CIPHER_SUITE_NO_GROUP_ADDRESSED:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_GTK_NOT_USED;
 			break;
 		}
@@ -360,6 +360,12 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	if (ext_feature_isset(ext_features, len, NL80211_EXT_FEATURE_VHT_IBSS))
 		capa->flags |= WPA_DRIVER_FLAGS_VHT_IBSS;
 
+	if (ext_feature_isset(ext_features, len, NL80211_EXT_FEATURE_RRM))
+		capa->rrm_flags |= WPA_DRIVER_FLAGS_SUPPORT_RRM;
+
+	if (ext_feature_isset(ext_features, len, NL80211_EXT_FEATURE_FILS_STA))
+		capa->flags |= WPA_DRIVER_FLAGS_SUPPORT_FILS;
+
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_BEACON_RATE_LEGACY))
 		capa->flags |= WPA_DRIVER_FLAGS_BEACON_RATE_LEGACY;
@@ -371,6 +377,30 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_BEACON_RATE_VHT))
 		capa->flags |= WPA_DRIVER_FLAGS_BEACON_RATE_VHT;
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SET_SCAN_DWELL))
+		capa->rrm_flags |= WPA_DRIVER_FLAGS_SUPPORT_SET_SCAN_DWELL;
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SCAN_START_TIME) &&
+	    ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_BSS_PARENT_TSF) &&
+	    ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SET_SCAN_DWELL))
+		capa->rrm_flags |= WPA_DRIVER_FLAGS_SUPPORT_BEACON_REPORT;
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_MGMT_TX_RANDOM_TA))
+		capa->flags |= WPA_DRIVER_FLAGS_MGMT_TX_RANDOM_TA;
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_MGMT_TX_RANDOM_TA_CONNECTED))
+		capa->flags |= WPA_DRIVER_FLAGS_MGMT_TX_RANDOM_TA_CONNECTED;
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SCHED_SCAN_RELATIVE_RSSI))
+		capa->flags |= WPA_DRIVER_FLAGS_SCHED_SCAN_RELATIVE_RSSI;
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_FILS_SK_OFFLOAD))
+		capa->flags |= WPA_DRIVER_FLAGS_FILS_SK_OFFLOAD;
 }
 
 
@@ -519,23 +549,22 @@ static void wiphy_info_extended_capab(struct wpa_driver_nl80211_data *drv,
 			   nl80211_iftype_str(capa->iftype));
 
 		len = nla_len(tb1[NL80211_ATTR_EXT_CAPA]);
-		capa->ext_capa = os_malloc(len);
+		capa->ext_capa = os_memdup(nla_data(tb1[NL80211_ATTR_EXT_CAPA]),
+					   len);
 		if (!capa->ext_capa)
 			goto err;
 
-		os_memcpy(capa->ext_capa, nla_data(tb1[NL80211_ATTR_EXT_CAPA]),
-			  len);
 		capa->ext_capa_len = len;
 		wpa_hexdump(MSG_DEBUG, "nl80211: Extended capabilities",
 			    capa->ext_capa, capa->ext_capa_len);
 
 		len = nla_len(tb1[NL80211_ATTR_EXT_CAPA_MASK]);
-		capa->ext_capa_mask = os_malloc(len);
+		capa->ext_capa_mask =
+			os_memdup(nla_data(tb1[NL80211_ATTR_EXT_CAPA_MASK]),
+				  len);
 		if (!capa->ext_capa_mask)
 			goto err;
 
-		os_memcpy(capa->ext_capa_mask,
-			  nla_data(tb1[NL80211_ATTR_EXT_CAPA_MASK]), len);
 		wpa_hexdump(MSG_DEBUG, "nl80211: Extended capabilities mask",
 			    capa->ext_capa_mask, capa->ext_capa_len);
 
@@ -1103,7 +1132,8 @@ int wpa_driver_nl80211_capa(struct wpa_driver_nl80211_data *drv)
 		WPA_DRIVER_CAPA_KEY_MGMT_WPA2 |
 		WPA_DRIVER_CAPA_KEY_MGMT_WPA2_PSK |
 		WPA_DRIVER_CAPA_KEY_MGMT_SUITE_B |
-		WPA_DRIVER_CAPA_KEY_MGMT_SUITE_B_192;
+		WPA_DRIVER_CAPA_KEY_MGMT_SUITE_B_192 |
+		WPA_DRIVER_CAPA_KEY_MGMT_OWE;
 	drv->capa.auth = WPA_DRIVER_AUTH_OPEN |
 		WPA_DRIVER_AUTH_SHARED |
 		WPA_DRIVER_AUTH_LEAP;
@@ -1498,14 +1528,13 @@ wpa_driver_nl80211_postprocess_modes(struct hostapd_hw_modes *modes,
 
 	mode11g = &modes[mode11g_idx];
 	mode->num_channels = mode11g->num_channels;
-	mode->channels = os_malloc(mode11g->num_channels *
+	mode->channels = os_memdup(mode11g->channels,
+				   mode11g->num_channels *
 				   sizeof(struct hostapd_channel_data));
 	if (mode->channels == NULL) {
 		(*num_modes)--;
 		return modes; /* Could not add 802.11b mode */
 	}
-	os_memcpy(mode->channels, mode11g->channels,
-		  mode11g->num_channels * sizeof(struct hostapd_channel_data));
 
 	mode->num_rates = 0;
 	mode->rates = os_malloc(4 * sizeof(int));
@@ -1866,6 +1895,7 @@ nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags)
 				os_free(result.modes[i].rates);
 			}
 			os_free(result.modes);
+			*num_modes = 0;
 			return NULL;
 		}
 		return wpa_driver_nl80211_postprocess_modes(result.modes,
