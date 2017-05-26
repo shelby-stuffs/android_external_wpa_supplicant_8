@@ -183,11 +183,10 @@ static u8 * eap_pwd_getkey(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->state != SUCCESS)
 		return NULL;
 
-	key = os_malloc(EAP_MSK_LEN);
+	key = os_memdup(data->msk, EAP_MSK_LEN);
 	if (key == NULL)
 		return NULL;
 
-	os_memcpy(key, data->msk, EAP_MSK_LEN);
 	*len = EAP_MSK_LEN;
 
 	return key;
@@ -202,11 +201,10 @@ static u8 * eap_pwd_get_session_id(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->state != SUCCESS)
 		return NULL;
 
-	id = os_malloc(1 + SHA256_MAC_LEN);
+	id = os_memdup(data->session_id, 1 + SHA256_MAC_LEN);
 	if (id == NULL)
 		return NULL;
 
-	os_memcpy(id, data->session_id, 1 + SHA256_MAC_LEN);
 	*len = 1 + SHA256_MAC_LEN;
 
 	return id;
@@ -345,7 +343,7 @@ eap_pwd_perform_id_exchange(struct eap_sm *sm, struct eap_pwd_data *data,
 	wpabuf_put_u8(data->outbuf, EAP_PWD_DEFAULT_RAND_FUNC);
 	wpabuf_put_u8(data->outbuf, EAP_PWD_DEFAULT_PRF);
 	wpabuf_put_data(data->outbuf, id->token, sizeof(id->token));
-	wpabuf_put_u8(data->outbuf, EAP_PWD_PREP_NONE);
+	wpabuf_put_u8(data->outbuf, id->prep);
 	wpabuf_put_data(data->outbuf, data->id_peer, data->id_peer_len);
 
 	eap_pwd_state(data, PWD_Commit_Req);

@@ -38,6 +38,9 @@ endif
 L_CFLAGS += -DCONFIG_CTRL_IFACE_CLIENT_DIR=\"/data/misc/wifi/sockets\"
 L_CFLAGS += -DCONFIG_CTRL_IFACE_DIR=\"/data/system/hostapd\"
 
+# Use Android specific directory for hostapd_cli command completion history
+L_CFLAGS += -DCONFIG_HOSTAPD_CLI_HISTORY_DIR=\"/data/misc/wifi\"
+
 # To force sizeof(enum) = 4
 ifeq ($(TARGET_ARCH),arm)
 L_CFLAGS += -mabi=aapcs-linux
@@ -96,6 +99,8 @@ OBJS += src/ap/pmksa_cache_auth.c
 OBJS += src/ap/ieee802_11_shared.c
 OBJS += src/ap/beacon.c
 OBJS += src/ap/bss_load.c
+OBJS += src/ap/neighbor_db.c
+OBJS += src/ap/rrm.c
 OBJS_d =
 OBJS_p =
 LIBS =
@@ -242,7 +247,7 @@ NEED_AES_OMAC1=y
 endif
 
 ifdef CONFIG_IEEE80211R
-L_CFLAGS += -DCONFIG_IEEE80211R
+L_CFLAGS += -DCONFIG_IEEE80211R -DCONFIG_IEEE80211R_AP
 OBJS += src/ap/wpa_auth_ft.c
 NEED_SHA256=y
 NEED_AES_OMAC1=y
@@ -254,6 +259,23 @@ L_CFLAGS += -DCONFIG_SAE
 OBJS += src/common/sae.c
 NEED_ECC=y
 NEED_DH_GROUPS=y
+endif
+
+ifdef CONFIG_OWE
+L_CFLAGS += -DCONFIG_OWE
+NEED_ECC=y
+NEED_HMAC_SHA256_KDF=y
+endif
+
+ifdef CONFIG_FILS
+L_CFLAGS += -DCONFIG_FILS
+OBJS += src/ap/fils_hlp.c
+NEED_SHA384=y
+NEED_AES_SIV=y
+ifdef CONFIG_FILS_SK_PFS
+L_CFLAGS += -DCONFIG_FILS_SK_PFS
+NEED_ECC=y
+endif
 endif
 
 ifdef CONFIG_WNM
@@ -717,6 +739,12 @@ endif
 ifdef NEED_AES_EAX
 AESOBJS += src/crypto/aes-eax.c
 NEED_AES_CTR=y
+NEED_AES_OMAC1=y
+endif
+ifdef NEED_AES_SIV
+AESOBJS += src/crypto/aes-siv.c
+NEED_AES_CTR=y
+NEED_AES_OMAC1=y
 endif
 ifdef NEED_AES_CTR
 AESOBJS += src/crypto/aes-ctr.c
@@ -825,6 +853,9 @@ endif
 endif
 ifdef NEED_SHA384
 L_CFLAGS += -DCONFIG_SHA384
+ifneq ($(CONFIG_TLS), openssl)
+OBJS += src/crypto/sha384.c
+endif
 OBJS += src/crypto/sha384-prf.c
 endif
 
@@ -941,6 +972,10 @@ ifdef CONFIG_NO_STDOUT_DEBUG
 L_CFLAGS += -DCONFIG_NO_STDOUT_DEBUG
 endif
 
+ifdef CONFIG_DEBUG_SYSLOG
+L_CFLAGS += -DCONFIG_DEBUG_SYSLOG
+endif
+
 ifdef CONFIG_DEBUG_LINUX_TRACING
 L_CFLAGS += -DCONFIG_DEBUG_LINUX_TRACING
 endif
@@ -953,7 +988,10 @@ ifdef CONFIG_ANDROID_LOG
 L_CFLAGS += -DCONFIG_ANDROID_LOG
 endif
 
-OBJS_c = hostapd_cli.c src/common/wpa_ctrl.c src/utils/os_$(CONFIG_OS).c
+OBJS_c = hostapd_cli.c
+OBJS_c += src/common/wpa_ctrl.c
+OBJS_c += src/utils/os_$(CONFIG_OS).c
+OBJS_c += src/common/cli.c
 OBJS_c += src/utils/eloop.c
 OBJS_c += src/utils/common.c
 ifdef CONFIG_WPA_TRACE
@@ -998,6 +1036,7 @@ endif
 LOCAL_CFLAGS := $(L_CFLAGS)
 LOCAL_SRC_FILES := $(OBJS)
 LOCAL_C_INCLUDES := $(INCLUDES)
+LOCAL_INIT_RC := hostapd.android.rc
 include $(BUILD_EXECUTABLE)
 
 endif # ifeq ($(WPA_BUILD_HOSTAPD),true)

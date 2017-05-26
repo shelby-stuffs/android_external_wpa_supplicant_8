@@ -99,13 +99,12 @@ static int wpa_config_read_blobs(struct wpa_config *config, HKEY hk)
 			break;
 		}
 		blob->name = os_strdup((char *) name);
-		blob->data = os_malloc(datalen);
+		blob->data = os_memdup(data, datalen);
 		if (blob->name == NULL || blob->data == NULL) {
 			wpa_config_free_blob(blob);
 			errors++;
 			break;
 		}
-		os_memcpy(blob->data, data, datalen);
 		blob->len = datalen;
 
 		wpa_config_set_blob(config, blob);
@@ -933,6 +932,7 @@ static int wpa_config_write_network(HKEY hk, struct wpa_ssid *ssid, int id)
 #ifdef CONFIG_HS20
 	INT(update_identifier);
 #endif /* CONFIG_HS20 */
+	INT(group_rekey);
 
 #undef STR
 #undef INT

@@ -41,7 +41,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    u16 listen_interval,
 		    const struct ieee80211_ht_capabilities *ht_capab,
 		    const struct ieee80211_vht_capabilities *vht_capab,
-		    u32 flags, u8 qosinfo, u8 vht_opmode, int set);
+		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
+		    int set);
 int hostapd_set_privacy(struct hostapd_data *hapd, int enabled);
 int hostapd_set_generic_elem(struct hostapd_data *hapd, const u8 *elem,
 			     size_t elem_len);
@@ -98,6 +99,10 @@ int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
 int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 			    unsigned int wait, const u8 *dst, const u8 *data,
 			    size_t len);
+int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
+				     unsigned int freq,
+				     unsigned int wait, const u8 *dst,
+				     const u8 *data, size_t len);
 int hostapd_add_sta_node(struct hostapd_data *hapd, const u8 *addr,
 			 u16 auth_alg);
 int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
@@ -155,7 +160,7 @@ static inline int hostapd_drv_get_inact_sec(struct hostapd_data *hapd,
 static inline int hostapd_drv_sta_remove(struct hostapd_data *hapd,
 					 const u8 *addr)
 {
-	if (hapd->driver == NULL || hapd->driver->sta_remove == NULL)
+	if (!hapd->driver || !hapd->driver->sta_remove || !hapd->drv_priv)
 		return 0;
 	return hapd->driver->sta_remove(hapd->drv_priv, addr);
 }
@@ -269,7 +274,8 @@ static inline const char * hostapd_drv_get_radio_name(struct hostapd_data *hapd)
 static inline int hostapd_drv_switch_channel(struct hostapd_data *hapd,
 					     struct csa_settings *settings)
 {
-	if (hapd->driver == NULL || hapd->driver->switch_channel == NULL)
+	if (hapd->driver == NULL || hapd->driver->switch_channel == NULL ||
+	    hapd->drv_priv == NULL)
 		return -ENOTSUP;
 
 	return hapd->driver->switch_channel(hapd->drv_priv, settings);
@@ -278,7 +284,7 @@ static inline int hostapd_drv_switch_channel(struct hostapd_data *hapd,
 static inline int hostapd_drv_status(struct hostapd_data *hapd, char *buf,
 				     size_t buflen)
 {
-	if (hapd->driver == NULL || hapd->driver->status == NULL)
+	if (!hapd->driver || !hapd->driver->status || !hapd->drv_priv)
 		return -1;
 	return hapd->driver->status(hapd->drv_priv, buf, buflen);
 }
@@ -337,7 +343,7 @@ static inline int hostapd_drv_vendor_cmd(struct hostapd_data *hapd,
 
 static inline int hostapd_drv_stop_ap(struct hostapd_data *hapd)
 {
-	if (hapd->driver == NULL || hapd->driver->stop_ap == NULL)
+	if (!hapd->driver || !hapd->driver->stop_ap || !hapd->drv_priv)
 		return 0;
 	return hapd->driver->stop_ap(hapd->drv_priv);
 }

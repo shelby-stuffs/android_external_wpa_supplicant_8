@@ -146,6 +146,7 @@ static int wpa_supplicant_eapol_send(void *ctx, int type, const u8 *buf,
 	 * extra copy here */
 
 	if (wpa_key_mgmt_wpa_psk(wpa_s->key_mgmt) ||
+	    wpa_s->key_mgmt == WPA_KEY_MGMT_OWE ||
 	    wpa_s->key_mgmt == WPA_KEY_MGMT_NONE) {
 		/* Current SSID is not using IEEE 802.1X/EAP, so drop possible
 		 * EAPOL frames (mainly, EAPOL-Start) from EAPOL state
@@ -514,17 +515,74 @@ static int wpa_supplicant_mlme_setprotection(void *wpa_s, const u8 *addr,
 }
 
 
-static int wpa_supplicant_add_pmkid(void *wpa_s,
-				    const u8 *bssid, const u8 *pmkid)
+static struct wpa_ssid * wpas_get_network_ctx(struct wpa_supplicant *wpa_s,
+					      void *network_ctx)
 {
-	return wpa_drv_add_pmkid(wpa_s, bssid, pmkid);
+	struct wpa_ssid *ssid;
+
+	for (ssid = wpa_s->conf->ssid; ssid; ssid = ssid->next) {
+		if (network_ctx == ssid)
+			return ssid;
+	}
+
+	return NULL;
 }
 
 
-static int wpa_supplicant_remove_pmkid(void *wpa_s,
-				       const u8 *bssid, const u8 *pmkid)
+static int wpa_supplicant_add_pmkid(void *_wpa_s, void *network_ctx,
+				    const u8 *bssid, const u8 *pmkid,
+				    const u8 *fils_cache_id,
+				    const u8 *pmk, size_t pmk_len)
 {
-	return wpa_drv_remove_pmkid(wpa_s, bssid, pmkid);
+	struct wpa_supplicant *wpa_s = _wpa_s;
+	struct wpa_ssid *ssid;
+	struct wpa_pmkid_params params;
+
+	os_memset(&params, 0, sizeof(params));
+	ssid = wpas_get_network_ctx(wpa_s, network_ctx);
+	if (ssid)
+		wpa_msg(wpa_s, MSG_INFO, PMKSA_CACHE_ADDED MACSTR " %d",
+			MAC2STR(bssid), ssid->id);
+	if (ssid && fils_cache_id) {
+		params.ssid = ssid->ssid;
+		params.ssid_len = ssid->ssid_len;
+		params.fils_cache_id = fils_cache_id;
+	} else {
+		params.bssid = bssid;
+	}
+
+	params.pmkid = pmkid;
+	params.pmk = pmk;
+	params.pmk_len = pmk_len;
+
+	return wpa_drv_add_pmkid(wpa_s, &params);
+}
+
+
+static int wpa_supplicant_remove_pmkid(void *_wpa_s, void *network_ctx,
+				       const u8 *bssid, const u8 *pmkid,
+				       const u8 *fils_cache_id)
+{
+	struct wpa_supplicant *wpa_s = _wpa_s;
+	struct wpa_ssid *ssid;
+	struct wpa_pmkid_params params;
+
+	os_memset(&params, 0, sizeof(params));
+	ssid = wpas_get_network_ctx(wpa_s, network_ctx);
+	if (ssid)
+		wpa_msg(wpa_s, MSG_INFO, PMKSA_CACHE_REMOVED MACSTR " %d",
+			MAC2STR(bssid), ssid->id);
+	if (ssid && fils_cache_id) {
+		params.ssid = ssid->ssid;
+		params.ssid_len = ssid->ssid_len;
+		params.fils_cache_id = fils_cache_id;
+	} else {
+		params.bssid = bssid;
+	}
+
+	params.pmkid = pmkid;
+
+	return wpa_drv_remove_pmkid(wpa_s, &params);
 }
 
 
@@ -1062,6 +1120,7 @@ int wpa_supplicant_init_eapol(struct wpa_supplicant *wpa_s)
 
 
 #ifndef CONFIG_NO_WPA
+
 static void wpa_supplicant_set_rekey_offload(void *ctx,
 					     const u8 *kek, size_t kek_len,
 					     const u8 *kck, size_t kck_len,
@@ -1085,6 +1144,25 @@ static int wpa_supplicant_key_mgmt_set_pmk(void *ctx, const u8 *pmk,
 	else
 		return 0;
 }
+
+
+static void wpa_supplicant_fils_hlp_rx(void *ctx, const u8 *dst, const u8 *src,
+				       const u8 *pkt, size_t pkt_len)
+{
+	struct wpa_supplicant *wpa_s = ctx;
+	char *hex;
+	size_t hexlen;
+
+	hexlen = pkt_len * 2 + 1;
+	hex = os_malloc(hexlen);
+	if (!hex)
+		return;
+	wpa_snprintf_hex(hex, hexlen, pkt, pkt_len);
+	wpa_msg(wpa_s, MSG_INFO, FILS_HLP_RX "dst=" MACSTR " src=" MACSTR
+		" frame=%s", MAC2STR(dst), MAC2STR(src), hex);
+	os_free(hex);
+}
+
 #endif /* CONFIG_NO_WPA */
 
 
@@ -1134,6 +1212,7 @@ int wpa_supplicant_init_wpa(struct wpa_supplicant *wpa_s)
 #endif /* CONFIG_TDLS */
 	ctx->set_rekey_offload = wpa_supplicant_set_rekey_offload;
 	ctx->key_mgmt_set_pmk = wpa_supplicant_key_mgmt_set_pmk;
+	ctx->fils_hlp_rx = wpa_supplicant_fils_hlp_rx;
 
 	wpa_s->wpa = wpa_sm_init(ctx);
 	if (wpa_s->wpa == NULL) {
@@ -1183,6 +1262,11 @@ void wpa_supplicant_rsn_supp_set_config(struct wpa_supplicant *wpa_s,
 		}
 #endif /* CONFIG_P2P */
 		conf.wpa_rsc_relaxation = wpa_s->conf->wpa_rsc_relaxation;
+#ifdef CONFIG_FILS
+		if (wpa_key_mgmt_fils(wpa_s->key_mgmt))
+			conf.fils_cache_id =
+				wpa_bss_get_fils_cache_id(wpa_s->current_bss);
+#endif /* CONFIG_FILS */
 	}
 	wpa_sm_set_config(wpa_s->wpa, ssid ? &conf : NULL);
 }
