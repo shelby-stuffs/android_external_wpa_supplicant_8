@@ -121,15 +121,17 @@ static void eap_deinit_prev_method(struct eap_sm *sm, const char *txt)
 
 
 /**
- * eap_allowed_method - Check whether EAP method is allowed
+ * eap_config_allowed_method - Check whether EAP method is allowed
  * @sm: Pointer to EAP state machine allocated with eap_peer_sm_init()
+ * @config: EAP configuration
  * @vendor: Vendor-Id for expanded types or 0 = IETF for legacy types
  * @method: EAP type
  * Returns: 1 = allowed EAP method, 0 = not allowed
  */
-int eap_allowed_method(struct eap_sm *sm, int vendor, u32 method)
+static int eap_config_allowed_method(struct eap_sm *sm,
+				     struct eap_peer_config *config,
+				     int vendor, u32 method)
 {
-	struct eap_peer_config *config = eap_get_config(sm);
 	int i;
 	struct eap_method_type *m;
 
@@ -144,6 +146,57 @@ int eap_allowed_method(struct eap_sm *sm, int vendor, u32 method)
 	}
 	return 0;
 }
+
+
+/**
+ * eap_allowed_method - Check whether EAP method is allowed
+ * @sm: Pointer to EAP state machine allocated with eap_peer_sm_init()
+ * @vendor: Vendor-Id for expanded types or 0 = IETF for legacy types
+ * @method: EAP type
+ * Returns: 1 = allowed EAP method, 0 = not allowed
+ */
+int eap_allowed_method(struct eap_sm *sm, int vendor, u32 method)
+{
+	return eap_config_allowed_method(sm, eap_get_config(sm), vendor,
+					 method);
+}
+
+
+#if defined(PCSC_FUNCS) || defined(CONFIG_EAP_PROXY)
+static int eap_sm_append_3gpp_realm(struct eap_sm *sm, char *imsi,
+				    size_t max_len, size_t *imsi_len,
+				    int mnc_len)
+{
+	char *pos, mnc[4];
+
+	if (*imsi_len + 36 > max_len) {
+		wpa_printf(MSG_WARNING, "No room for realm in IMSI buffer");
+		return -1;
+	}
+
+	if (mnc_len != 2 && mnc_len != 3)
+		mnc_len = 3;
+
+	if (mnc_len == 2) {
+		mnc[0] = '0';
+		mnc[1] = imsi[3];
+		mnc[2] = imsi[4];
+	} else if (mnc_len == 3) {
+		mnc[0] = imsi[3];
+		mnc[1] = imsi[4];
+		mnc[2] = imsi[5];
+	}
+	mnc[3] = '\0';
+
+	pos = imsi + *imsi_len;
+	pos += os_snprintf(pos, imsi + max_len - pos,
+			   "@wlan.mnc%s.mcc%c%c%c.3gppnetwork.org",
+			   mnc, imsi[0], imsi[1], imsi[2]);
+	*imsi_len = pos - imsi;
+
+	return 0;
+}
+#endif /* PCSC_FUNCS || CONFIG_EAP_PROXY */
 
 
 /*
@@ -412,6 +465,44 @@ static char * eap_get_realm(struct eap_sm *sm, struct eap_peer_config *config)
 		}
 	}
 
+#ifdef CONFIG_EAP_PROXY
+	/* When identity is not provided in the config, build the realm from
+	 * IMSI for eap_proxy based methods.
+	 */
+	if (!config->identity && !config->anonymous_identity &&
+	    sm->eapol_cb->get_imsi &&
+	    (eap_config_allowed_method(sm, config, EAP_VENDOR_IETF,
+				       EAP_TYPE_SIM) ||
+	     eap_config_allowed_method(sm, config, EAP_VENDOR_IETF,
+				       EAP_TYPE_AKA) ||
+	     eap_config_allowed_method(sm, config, EAP_VENDOR_IETF,
+				       EAP_TYPE_AKA_PRIME))) {
+		char imsi[100];
+		size_t imsi_len;
+		int mnc_len, pos;
+
+		wpa_printf(MSG_DEBUG, "EAP: Build realm from IMSI (eap_proxy)");
+		mnc_len = sm->eapol_cb->get_imsi(sm->eapol_ctx, config->sim_num,
+						 imsi, &imsi_len);
+		if (mnc_len < 0)
+			return NULL;
+
+		pos = imsi_len + 1; /* points to the beginning of the realm */
+		if (eap_sm_append_3gpp_realm(sm, imsi, sizeof(imsi), &imsi_len,
+					     mnc_len) < 0) {
+			wpa_printf(MSG_WARNING, "Could not append realm");
+			return NULL;
+		}
+
+		realm = os_strdup(&imsi[pos]);
+		if (!realm)
+			return NULL;
+
+		wpa_printf(MSG_DEBUG, "EAP: Generated realm '%s'", realm);
+		return realm;
+	}
+#endif /* CONFIG_EAP_PROXY */
+
 	return NULL;
 }
 
@@ -566,11 +657,15 @@ void eap_peer_erp_free_keys(struct eap_sm *sm)
 }
 
 
-static void eap_peer_erp_init(struct eap_sm *sm)
+void eap_peer_erp_init(struct eap_sm *sm, u8 *ext_session_id,
+		       size_t ext_session_id_len, u8 *ext_emsk,
+		       size_t ext_emsk_len)
 {
 #ifdef CONFIG_ERP
 	u8 *emsk = NULL;
 	size_t emsk_len = 0;
+	u8 *session_id = NULL;
+	size_t session_id_len = 0;
 	u8 EMSKname[EAP_EMSK_NAME_LEN];
 	u8 len[2], ctx[3];
 	char *realm;
@@ -600,7 +695,13 @@ static void eap_peer_erp_init(struct eap_sm *sm)
 	if (erp == NULL)
 		goto fail;
 
-	emsk = sm->m->get_emsk(sm, sm->eap_method_priv, &emsk_len);
+	if (ext_emsk) {
+		emsk = ext_emsk;
+		emsk_len = ext_emsk_len;
+	} else {
+		emsk = sm->m->get_emsk(sm, sm->eap_method_priv, &emsk_len);
+	}
+
 	if (!emsk || emsk_len == 0 || emsk_len > ERP_MAX_KEY_LEN) {
 		wpa_printf(MSG_DEBUG,
 			   "EAP: No suitable EMSK available for ERP");
@@ -609,10 +710,23 @@ static void eap_peer_erp_init(struct eap_sm *sm)
 
 	wpa_hexdump_key(MSG_DEBUG, "EAP: EMSK", emsk, emsk_len);
 
+	if (ext_session_id) {
+		session_id = ext_session_id;
+		session_id_len = ext_session_id_len;
+	} else {
+		session_id = sm->eapSessionId;
+		session_id_len = sm->eapSessionIdLen;
+	}
+
+	if (!session_id || session_id_len == 0) {
+		wpa_printf(MSG_DEBUG,
+			   "EAP: No suitable session id available for ERP");
+		goto fail;
+	}
+
 	WPA_PUT_BE16(len, EAP_EMSK_NAME_LEN);
-	if (hmac_sha256_kdf(sm->eapSessionId, sm->eapSessionIdLen, "EMSK",
-			    len, sizeof(len),
-			    EMSKname, EAP_EMSK_NAME_LEN) < 0) {
+	if (hmac_sha256_kdf(session_id, session_id_len, "EMSK", len,
+			    sizeof(len), EMSKname, EAP_EMSK_NAME_LEN) < 0) {
 		wpa_printf(MSG_DEBUG, "EAP: Could not derive EMSKname");
 		goto fail;
 	}
@@ -649,6 +763,7 @@ static void eap_peer_erp_init(struct eap_sm *sm)
 	erp = NULL;
 fail:
 	bin_clear_free(emsk, emsk_len);
+	bin_clear_free(ext_session_id, ext_session_id_len);
 	bin_clear_free(erp, sizeof(*erp));
 	os_free(realm);
 #endif /* CONFIG_ERP */
@@ -805,7 +920,7 @@ SM_STATE(EAP, METHOD)
 				    sm->eapSessionId, sm->eapSessionIdLen);
 		}
 		if (config->erp && sm->m->get_emsk && sm->eapSessionId)
-			eap_peer_erp_init(sm);
+			eap_peer_erp_init(sm, NULL, 0, NULL, 0);
 	}
 }
 
@@ -1375,48 +1490,6 @@ static int mnc_len_from_imsi(const char *imsi)
 }
 
 
-static int eap_sm_append_3gpp_realm(struct eap_sm *sm, char *imsi,
-				    size_t max_len, size_t *imsi_len)
-{
-	int mnc_len;
-	char *pos, mnc[4];
-
-	if (*imsi_len + 36 > max_len) {
-		wpa_printf(MSG_WARNING, "No room for realm in IMSI buffer");
-		return -1;
-	}
-
-	/* MNC (2 or 3 digits) */
-	mnc_len = scard_get_mnc_len(sm->scard_ctx);
-	if (mnc_len < 0)
-		mnc_len = mnc_len_from_imsi(imsi);
-	if (mnc_len < 0) {
-		wpa_printf(MSG_INFO, "Failed to get MNC length from (U)SIM "
-			   "assuming 3");
-		mnc_len = 3;
-	}
-
-	if (mnc_len == 2) {
-		mnc[0] = '0';
-		mnc[1] = imsi[3];
-		mnc[2] = imsi[4];
-	} else if (mnc_len == 3) {
-		mnc[0] = imsi[3];
-		mnc[1] = imsi[4];
-		mnc[2] = imsi[5];
-	}
-	mnc[3] = '\0';
-
-	pos = imsi + *imsi_len;
-	pos += os_snprintf(pos, imsi + max_len - pos,
-			   "@wlan.mnc%s.mcc%c%c%c.3gppnetwork.org",
-			   mnc, imsi[0], imsi[1], imsi[2]);
-	*imsi_len = pos - imsi;
-
-	return 0;
-}
-
-
 static int eap_sm_imsi_identity(struct eap_sm *sm,
 				struct eap_peer_config *conf)
 {
@@ -1424,7 +1497,7 @@ static int eap_sm_imsi_identity(struct eap_sm *sm,
 	char imsi[100];
 	size_t imsi_len;
 	struct eap_method_type *m = conf->eap_methods;
-	int i;
+	int i, mnc_len;
 
 	imsi_len = sizeof(imsi);
 	if (scard_get_imsi(sm->scard_ctx, imsi, &imsi_len)) {
@@ -1439,7 +1512,18 @@ static int eap_sm_imsi_identity(struct eap_sm *sm,
 		return -1;
 	}
 
-	if (eap_sm_append_3gpp_realm(sm, imsi, sizeof(imsi), &imsi_len) < 0) {
+	/* MNC (2 or 3 digits) */
+	mnc_len = scard_get_mnc_len(sm->scard_ctx);
+	if (mnc_len < 0)
+		mnc_len = mnc_len_from_imsi(imsi);
+	if (mnc_len < 0) {
+		wpa_printf(MSG_INFO, "Failed to get MNC length from (U)SIM "
+			   "assuming 3");
+		mnc_len = 3;
+	}
+
+	if (eap_sm_append_3gpp_realm(sm, imsi, sizeof(imsi), &imsi_len,
+				     mnc_len) < 0) {
 		wpa_printf(MSG_WARNING, "Could not add realm to SIM identity");
 		return -1;
 	}
