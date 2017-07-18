@@ -197,7 +197,11 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 			}
 #endif /* CONFIG_WPS */
 
-			wpa_printf(MSG_DEBUG, "No WPA/RSN IE from STA");
+			wpa_printf(MSG_INFO,
+					   "No WPA/RSN IE from STA, disassoc it.");
+			hostapd_drv_sta_disassoc(hapd, sta->addr,
+						 WLAN_REASON_INVALID_IE);
+			ap_free_sta(hapd, sta);
 			return -1;
 		}
 #ifdef CONFIG_WPS
