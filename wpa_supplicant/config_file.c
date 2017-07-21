@@ -344,7 +344,7 @@ static struct wpa_config_blob * wpa_config_read_blob(FILE *f, int *line,
 		encoded_len += len;
 	}
 
-	if (!end) {
+	if (!end || !encoded) {
 		wpa_printf(MSG_ERROR, "Line %d: blob was not terminated "
 			   "properly", *line);
 		os_free(encoded);
@@ -531,6 +531,17 @@ static void write_bssid(FILE *f, struct wpa_ssid *ssid)
 	if (value == NULL)
 		return;
 	fprintf(f, "\tbssid=%s\n", value);
+	os_free(value);
+}
+
+
+static void write_bssid_hint(FILE *f, struct wpa_ssid *ssid)
+{
+	char *value = wpa_config_get(ssid, "bssid_hint");
+
+	if (!value)
+		return;
+	fprintf(f, "\tbssid_hint=%s\n", value);
 	os_free(value);
 }
 
@@ -745,6 +756,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 	STR(ssid);
 	INT(scan_ssid);
 	write_bssid(f, ssid);
+	write_bssid_hint(f, ssid);
 	write_str(f, "bssid_blacklist", ssid);
 	write_str(f, "bssid_whitelist", ssid);
 	write_psk(f, ssid);
@@ -815,6 +827,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 #endif /* IEEE8021X_EAPOL */
 	INT(mode);
 	INT(no_auto_peer);
+	INT_DEF(mesh_rssi_threshold, DEFAULT_MESH_RSSI_THRESHOLD);
 	INT(frequency);
 	INT(fixed_freq);
 #ifdef CONFIG_ACS
@@ -824,9 +837,15 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 	INT(disabled);
 	INT(peerkey);
 	INT(mixed_cell);
+	INT(vht);
+	INT_DEF(ht, 1);
+	INT(ht40);
 	INT(max_oper_chwidth);
+	INT(vht_center_freq1);
+	INT(vht_center_freq2);
 	INT(pbss);
 	INT(wps_disabled);
+	INT(fils_dh_group);
 #ifdef CONFIG_IEEE80211W
 	write_int(f, "ieee80211w", ssid->ieee80211w,
 		  MGMT_FRAME_PROTECTION_DEFAULT);
@@ -862,6 +881,13 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 	INT(wpa_ptk_rekey);
 	INT(group_rekey);
 	INT(ignore_broadcast_ssid);
+#ifdef CONFIG_DPP
+	STR(dpp_connector);
+	STR(dpp_netaccesskey);
+	INT(dpp_netaccesskey_expiry);
+	STR(dpp_csign);
+	INT(dpp_csign_expiry);
+#endif /* CONFIG_DPP */
 #ifdef CONFIG_HT_OVERRIDES
 	INT_DEF(disable_ht, DEFAULT_DISABLE_HT);
 	INT_DEF(disable_ht40, DEFAULT_DISABLE_HT40);
@@ -1114,6 +1140,8 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 		uuid_bin2str(config->uuid, buf, sizeof(buf));
 		fprintf(f, "uuid=%s\n", buf);
 	}
+	if (config->auto_uuid)
+		fprintf(f, "auto_uuid=%d\n", config->auto_uuid);
 	if (config->device_name)
 		fprintf(f, "device_name=%s\n", config->device_name);
 	if (config->manufacturer)
@@ -1352,6 +1380,10 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 		fprintf(f, "sched_scan_interval=%u\n",
 			config->sched_scan_interval);
 
+	if (config->sched_scan_start_delay)
+		fprintf(f, "sched_scan_start_delay=%u\n",
+			config->sched_scan_start_delay);
+
 	if (config->external_sim)
 		fprintf(f, "external_sim=%d\n", config->external_sim);
 
@@ -1426,6 +1458,12 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 		fprintf(f, "non_pref_chan=%s\n", config->non_pref_chan);
 	if (config->mbo_cell_capa != DEFAULT_MBO_CELL_CAPA)
 		fprintf(f, "mbo_cell_capa=%u\n", config->mbo_cell_capa);
+	if (config->disassoc_imminent_rssi_threshold !=
+	    DEFAULT_DISASSOC_IMMINENT_RSSI_THRESHOLD)
+		fprintf(f, "disassoc_imminent_rssi_threshold=%d\n",
+			config->disassoc_imminent_rssi_threshold);
+	if (config->oce != DEFAULT_OCE_SUPPORT)
+		fprintf(f, "oce=%u\n", config->oce);
 #endif /* CONFIG_MBO */
 
 	if (config->gas_address3)
@@ -1451,6 +1489,9 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 			config->gas_rand_addr_lifetime);
 	if (config->gas_rand_mac_addr)
 		fprintf(f, "gas_rand_mac_addr=%d\n", config->gas_rand_mac_addr);
+	if (config->dpp_config_processing)
+		fprintf(f, "dpp_config_processing=%d\n",
+			config->dpp_config_processing);
 
 }
 
