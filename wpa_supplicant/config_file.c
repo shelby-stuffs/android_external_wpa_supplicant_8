@@ -141,13 +141,45 @@ static int wpa_config_validate_network(struct wpa_ssid *ssid, int line)
 		ssid->p2p_persistent_group = 1;
 
 	if ((ssid->group_cipher & WPA_CIPHER_CCMP) &&
-	    !(ssid->pairwise_cipher & WPA_CIPHER_CCMP) &&
-	    !(ssid->pairwise_cipher & WPA_CIPHER_NONE)) {
+	    !(ssid->pairwise_cipher & (WPA_CIPHER_NONE | WPA_CIPHER_CCMP |
+				       WPA_CIPHER_GCMP | WPA_CIPHER_GCMP_256 |
+				       WPA_CIPHER_CCMP_256))) {
 		/* Group cipher cannot be stronger than the pairwise cipher. */
 		wpa_printf(MSG_DEBUG, "Line %d: removed CCMP from group cipher"
 			   " list since it was not allowed for pairwise "
 			   "cipher", line);
 		ssid->group_cipher &= ~WPA_CIPHER_CCMP;
+	}
+
+	if ((ssid->group_cipher & WPA_CIPHER_GCMP) &&
+	    !(ssid->pairwise_cipher & (WPA_CIPHER_NONE | WPA_CIPHER_GCMP |
+				       WPA_CIPHER_GCMP_256 |
+				       WPA_CIPHER_CCMP_256))) {
+		/* Group cipher cannot be stronger than the pairwise cipher. */
+		wpa_printf(MSG_DEBUG, "Line %d: removed GCMP from group cipher"
+			   " list since it was not allowed for pairwise "
+			   "cipher", line);
+		ssid->group_cipher &= ~WPA_CIPHER_GCMP;
+	}
+
+	if ((ssid->group_cipher & WPA_CIPHER_CCMP_256) &&
+	    !(ssid->pairwise_cipher & (WPA_CIPHER_NONE | WPA_CIPHER_CCMP_256 |
+				       WPA_CIPHER_GCMP_256))) {
+		/* Group cipher cannot be stronger than the pairwise cipher. */
+		wpa_printf(MSG_DEBUG, "Line %d: removed CCMP-256 from group "
+			   "cipher list since it was not allowed for pairwise "
+			   "cipher", line);
+		ssid->group_cipher &= ~WPA_CIPHER_CCMP_256;
+	}
+
+	if ((ssid->group_cipher & WPA_CIPHER_GCMP_256) &&
+	    !(ssid->pairwise_cipher & (WPA_CIPHER_NONE |
+				       WPA_CIPHER_GCMP_256))) {
+		/* Group cipher cannot be stronger than the pairwise cipher. */
+		wpa_printf(MSG_DEBUG, "Line %d: removed GCMP-256 from group "
+			   "cipher list since it was not allowed for pairwise "
+			   "cipher", line);
+		ssid->group_cipher &= ~WPA_CIPHER_GCMP_256;
 	}
 
 	if (ssid->mode == WPAS_MODE_MESH &&
