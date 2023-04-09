@@ -17,6 +17,7 @@
 #endif /* CONFIG_MATCH_IFACE */
 
 #include "common.h"
+#include "crypto/crypto.h"
 #include "crypto/random.h"
 #include "crypto/sha1.h"
 #include "eapol_supp/eapol_supp_sm.h"
@@ -3162,7 +3163,13 @@ static u8 * wpas_populate_assoc_ies(
 		const u8 *cache_id = NULL;
 		const u8 *addr = bss->bssid;
 
-		if (wpa_s->valid_links)
+		if (!(wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME) &&
+		    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_MLO) &&
+		    !is_zero_ether_addr(bss->mld_addr))
+			addr = bss->mld_addr;
+
+		if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME) &&
+		    wpa_s->valid_links)
 			addr = wpa_s->ap_mld_addr;
 
 		try_opportunistic = (ssid->proactive_key_caching < 0 ?
@@ -8271,6 +8278,24 @@ int wpas_network_disabled(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
 	    !(wpa_key_mgmt_sae(ssid->key_mgmt) && ssid->sae_password) &&
 	    !ssid->mem_only_psk)
 		return 1;
+
+#ifdef CRYPTO_RSA_OAEP_SHA256
+	if (ssid->eap.imsi_privacy_cert) {
+		struct crypto_rsa_key *key;
+		bool failed = false;
+
+		key = crypto_rsa_key_read(ssid->eap.imsi_privacy_cert, false);
+		if (!key)
+			failed = true;
+		crypto_rsa_key_free(key);
+		if (failed) {
+			wpa_printf(MSG_DEBUG,
+				   "Invalid imsi_privacy_cert (%s) - disable network",
+				   ssid->eap.imsi_privacy_cert);
+			return 1;
+		}
+	}
+#endif /* CRYPTO_RSA_OAEP_SHA256 */
 
 	return 0;
 }
